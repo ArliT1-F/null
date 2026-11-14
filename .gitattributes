@@ -1,0 +1,8 @@
+* text=auto eol=lf
+
+# Lockfiles and generated SQL should never be merged line-by-line
+package-lock.json -diff linguist-generated
+src/db/migrations/*.sql linguist-generated
+
+# Shell scripts must keep LF endings to run on Linux hosts
+*.sh text eol=lf

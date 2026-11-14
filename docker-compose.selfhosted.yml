@@ -1,0 +1,55 @@
+# ---------------------------------------------------------------------------
+# Vessel — self-hosted production overlay (home desktop + Cloudflare Tunnel)
+#
+#   docker compose -f docker-compose.yml -f docker-compose.selfhosted.yml up -d
+#
+# · The app is reachable only on loopback; cloudflared connects out to
+#   Cloudflare, so no router ports are opened.
+# · PostgreSQL stays on the internal network with no published port.
+# · Containers restart automatically after reboot or crash.
+# ---------------------------------------------------------------------------
+
+services:
+  web:
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+    deploy:
+      resources:
+        limits:
+          memory: ${WEB_MEMORY_LIMIT:-768M}
+
+  db:
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+    deploy:
+      resources:
+        limits:
+          memory: ${DB_MEMORY_LIMIT:-512M}
+
+  tunnel:
+    image: cloudflare/cloudflared:latest
+    restart: unless-stopped
+    # Token is provided out-of-band (see docs/SELF_HOSTING.md); it is never
+    # baked into the image or committed to the repository.
+    command: ["tunnel", "--no-autoupdate", "run"]
+    environment:
+      TUNNEL_TOKEN: ${CLOUDFLARE_TUNNEL_TOKEN:?set CLOUDFLARE_TUNNEL_TOKEN}
+    depends_on:
+      web:
+        condition: service_healthy
+    networks: [internal]
+    logging:
+      driver: json-file
+      options:
+        max-size: "5m"
+        max-file: "2"
+    deploy:
+      resources:
+        limits:
+          memory: 128M
