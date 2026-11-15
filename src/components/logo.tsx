@@ -10,7 +10,9 @@ export function Logo({ className }: { className?: string }) {
   return (
     <span className={cn("inline-flex items-center gap-2", className)}>
       <span className="relative grid size-8 place-items-center rounded-[10px] bg-ink-950 text-white shadow-sm dark:bg-brand-400 dark:text-[#04231b]">
-        <svg viewBox="0 0 24 24" className="size-[18px]" fill="none" aria-hidden>
+        {/* suppressHydrationWarning: extensions such as Dark Reader rewrite svg
+            attributes before hydration — see the note on <Icon> in ui.tsx. */}
+        <svg viewBox="0 0 24 24" className="size-[18px]" fill="none" aria-hidden suppressHydrationWarning>
           <path
             d="M4 15.5c2.2 2.6 5.1 3.9 8 3.9s5.8-1.3 8-3.9"
             stroke="currentColor"

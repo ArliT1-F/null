@@ -1,6 +1,7 @@
 import { Github, Globe, Instagram, Music, Twitch, Youtube } from "lucide-react";
 import type { ProfileConfig } from "@/lib/profile-config";
 import { themeToCssVars } from "@/lib/profile-config";
+import { Icon } from "@/components/ui";
 import { cn } from "@/lib/utils";
 
 /**
@@ -10,6 +11,13 @@ import { cn } from "@/lib/utils";
  * visitor sees here is what they get on their published page. Used on the
  * landing page as a product demonstration (not fake data presented as a real
  * user — it is clearly a sample).
+ *
+ * Every node that carries an inline `style` also carries
+ * `suppressHydrationWarning`: colour/background/border declarations are exactly
+ * what Dark Reader rewrites in the DOM before React hydrates, and the
+ * suppression does not inherit, so it has to sit on each node that owns a
+ * `style` prop. Icons go through `<Icon>` for the same reason. See the note on
+ * `<Icon>` in `src/components/ui.tsx`.
  */
 
 const SAMPLE_LINKS = [
@@ -34,6 +42,7 @@ export function ProfilePreviewCard({
   return (
     <div
       className={cn("relative overflow-hidden rounded-[28px] border border-white/10", className)}
+      suppressHydrationWarning
       style={{
         ...vars,
         background: "var(--p-bg)",
@@ -45,6 +54,7 @@ export function ProfilePreviewCard({
       {config.theme.background.type !== "solid" && (
         <div
           className="pointer-events-none absolute inset-0 opacity-70"
+          suppressHydrationWarning
           style={{
             background:
               "radial-gradient(60% 50% at 20% 10%, rgba(255,255,255,0.16), transparent 70%), radial-gradient(50% 45% at 85% 90%, rgba(255,255,255,0.10), transparent 70%)",
@@ -54,6 +64,7 @@ export function ProfilePreviewCard({
       <div className="relative flex min-h-[420px] flex-col items-center justify-center p-8">
         <div
           className="w-full"
+          suppressHydrationWarning
           style={{
             maxWidth: "var(--p-width)",
             display: "flex",
@@ -72,6 +83,7 @@ export function ProfilePreviewCard({
           {config.layout.showAvatar && (
             <div
               className="relative size-20 shrink-0 rounded-full"
+              suppressHydrationWarning
               style={{
                 background: "linear-gradient(145deg, var(--p-accent), color-mix(in srgb, var(--p-accent) 40%, #ffffff))",
                 boxShadow: glow ? "0 0 0 1px rgba(255,255,255,0.18), 0 10px 30px -10px var(--p-accent)" : "none",
@@ -83,39 +95,46 @@ export function ProfilePreviewCard({
           )}
 
           <div className="space-y-1.5">
-            <p className="text-lg font-bold leading-tight" style={{ fontWeight: "var(--p-heading-weight)" }}>
+            <p
+              className="text-lg font-bold leading-tight"
+              suppressHydrationWarning
+              style={{ fontWeight: "var(--p-heading-weight)" }}
+            >
               arli
             </p>
-            <p className="text-xs" style={{ color: "var(--p-muted)", letterSpacing: "var(--p-tracking)" }}>
+            <p
+              className="text-xs"
+              suppressHydrationWarning
+              style={{ color: "var(--p-muted)", letterSpacing: "var(--p-tracking)" }}
+            >
               designer · tinkerer · Tirana
             </p>
           </div>
 
           <p
             className="max-w-[34ch] text-xs leading-relaxed"
+            suppressHydrationWarning
             style={{ color: "var(--p-muted)", lineHeight: "var(--p-leading)" }}
           >
             Building small, careful things for the web. Sometimes I take photos.
           </p>
 
           <div className="mt-1 flex w-full flex-col" style={{ gap: "calc(var(--p-gap) * 0.7)" }}>
-            {SAMPLE_LINKS.slice(0, 4).map((link) => {
-              const Icon = link.icon;
-              return (
-                <div
-                  key={link.label}
-                  className="flex items-center gap-2.5 px-3.5 py-2.5 text-xs font-medium"
-                  style={{
-                    borderRadius: "var(--p-btn-radius)",
-                    background: "color-mix(in srgb, var(--p-btn-fill) calc(var(--p-btn-fill-opacity) * 100%), transparent)",
-                    border: "1px solid color-mix(in srgb, var(--p-text) 14%, transparent)",
-                  }}
-                >
-                  <Icon className="size-3.5 shrink-0" style={{ color: link.tone }} />
-                  <span className="truncate">{link.label}</span>
-                </div>
-              );
-            })}
+            {SAMPLE_LINKS.slice(0, 4).map((link) => (
+              <div
+                key={link.label}
+                className="flex items-center gap-2.5 px-3.5 py-2.5 text-xs font-medium"
+                suppressHydrationWarning
+                style={{
+                  borderRadius: "var(--p-btn-radius)",
+                  background: "color-mix(in srgb, var(--p-btn-fill) calc(var(--p-btn-fill-opacity) * 100%), transparent)",
+                  border: "1px solid color-mix(in srgb, var(--p-text) 14%, transparent)",
+                }}
+              >
+                <Icon icon={link.icon} className="size-3.5 shrink-0" style={{ color: link.tone }} />
+                <span className="truncate">{link.label}</span>
+              </div>
+            ))}
           </div>
         </div>
       </div>

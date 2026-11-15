@@ -3,6 +3,7 @@ import Link from "next/link";
 import { ArrowRight, BookOpen, Database, Server, ShieldCheck, Terminal } from "lucide-react";
 import { SiteFooter } from "@/components/site-footer";
 import { SiteHeader } from "@/components/site-header";
+import { Icon } from "@/components/ui";
 
 export const metadata: Metadata = {
   title: "Documentation",
@@ -51,16 +52,16 @@ export default function DocsPage() {
         </p>
 
         <ul className="mt-10 grid gap-4 sm:grid-cols-2">
-          {SECTIONS.map(({ icon: Icon, title, body, href }) => (
+          {SECTIONS.map(({ icon: SectionIcon, title, body, href }) => (
             <li key={title}>
               <Link
                 href={href}
                 className="panel group flex h-full flex-col gap-2 p-5 transition-all hover:-translate-y-0.5 hover:shadow-lg"
               >
-                <Icon className="size-5 text-brand-600 dark:text-brand-300" />
+                <Icon icon={SectionIcon} className="size-5 text-brand-600 dark:text-brand-300" />
                 <span className="flex items-center gap-1 text-sm font-semibold">
                   {title}
-                  <ArrowRight className="size-3.5 opacity-0 transition-opacity group-hover:opacity-100" />
+                  <Icon icon={ArrowRight} className="size-3.5 opacity-0 transition-opacity group-hover:opacity-100" />
                 </span>
                 <span className="text-[13px] leading-relaxed text-ink-500 dark:text-ink-400">{body}</span>
               </Link>
@@ -134,7 +135,7 @@ docker compose -f docker-compose.yml \\
 
         <div className="mt-14 rounded-2xl border border-ink-200 bg-ink-50 px-5 py-4 text-sm dark:border-white/10 dark:bg-white/[0.03]">
           <p className="flex items-center gap-2 font-medium">
-            <BookOpen className="size-4" /> Repository documents
+            <Icon icon={BookOpen} className="size-4" /> Repository documents
           </p>
           <p className="mt-1.5 text-[13px] text-ink-500 dark:text-ink-400">
             ARCHITECTURE, DATABASE, DEVELOPMENT, SELF_HOSTING, CLOUD_DEPLOYMENT, MIGRATION,

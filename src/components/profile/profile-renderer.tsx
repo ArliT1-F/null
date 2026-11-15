@@ -1,4 +1,5 @@
 import { MapPin, Sparkles } from "lucide-react";
+import { Icon } from "@/components/ui";
 import { LinkTracker } from "./link-tracker";
 import { linkIcon } from "./icons";
 
@@ -11,6 +12,11 @@ import { linkIcon } from "./icons";
  *
  * Link URLs were scheme-checked on write (http/https/mailto only); `rel` and
  * `target` are hard-coded here, so neither can be influenced by profile data.
+ *
+ * Icons render through `<Icon>` and the two inline-styled nodes opt out of
+ * React's hydration comparison, because extensions such as Dark Reader inject
+ * their own attributes/styles into the DOM before hydration runs. See the note
+ * on `<Icon>` in `src/components/ui.tsx`.
  */
 
 export type RenderLink = {
@@ -60,6 +66,7 @@ export function ProfileView({ profile, track }: { profile: RenderProfile; track?
             <div
               className="vp-avatar"
               aria-hidden
+              suppressHydrationWarning
               style={{
                 display: "grid",
                 placeItems: "center",
@@ -78,20 +85,24 @@ export function ProfileView({ profile, track }: { profile: RenderProfile; track?
             <p className="vp-handle">@{profile.usernameDisplay}</p>
           </div>
 
-          {profile.headline && <p className="vp-bio" style={{ color: "var(--p-text)", fontWeight: 500 }}>{profile.headline}</p>}
+          {profile.headline && (
+            <p className="vp-bio" suppressHydrationWarning style={{ color: "var(--p-text)", fontWeight: 500 }}>
+              {profile.headline}
+            </p>
+          )}
           {profile.bio && <p className="vp-bio">{profile.bio}</p>}
 
           {(profile.showLocation && profile.location) || (profile.showStatus && profile.statusText) ? (
             <div className="vp-meta">
               {profile.showLocation && profile.location && (
                 <span>
-                  <MapPin width={12} height={12} aria-hidden />
+                  <Icon icon={MapPin} width={12} height={12} aria-hidden />
                   {profile.location}
                 </span>
               )}
               {profile.showStatus && profile.statusText && (
                 <span>
-                  <Sparkles width={12} height={12} aria-hidden />
+                  <Icon icon={Sparkles} width={12} height={12} aria-hidden />
                   {profile.statusText}
                 </span>
               )}
@@ -104,7 +115,7 @@ export function ProfileView({ profile, track }: { profile: RenderProfile; track?
             <p className="vp-empty">No links yet.</p>
           ) : (
             profile.links.map((link) => {
-              const Icon = linkIcon(link.icon);
+              const LinkIcon = linkIcon(link.icon);
               const isMail = link.url.startsWith("mailto:");
               return (
                 <a
@@ -116,7 +127,7 @@ export function ProfileView({ profile, track }: { profile: RenderProfile; track?
                   data-link-id={link.id}
                   data-track-link={track ? link.id : undefined}
                 >
-                  <Icon aria-hidden />
+                  <Icon icon={LinkIcon} aria-hidden />
                   <span>{link.label}</span>
                 </a>
               );
@@ -125,7 +136,7 @@ export function ProfileView({ profile, track }: { profile: RenderProfile; track?
         </div>
 
         <p className="vp-footer">
-          <Sparkles width={11} height={11} aria-hidden />
+          <Icon icon={Sparkles} width={11} height={11} aria-hidden />
           {profile.appName}
         </p>
       </main>

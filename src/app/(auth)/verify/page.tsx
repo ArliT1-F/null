@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { CheckCircle2, XCircle } from "lucide-react";
 import { verifyEmailAction } from "../actions";
+import { Icon } from "@/components/ui";
 
 export const metadata: Metadata = { title: "Email verification" };
 
@@ -25,7 +26,7 @@ export default async function VerifyPage({
             : "bg-red-50 text-red-600 dark:bg-red-400/10 dark:text-red-300"
         }`}
       >
-        {result.ok ? <CheckCircle2 className="size-7" /> : <XCircle className="size-7" />}
+        {result.ok ? <Icon icon={CheckCircle2} className="size-7" /> : <Icon icon={XCircle} className="size-7" />}
       </div>
 
       <h1 className="font-display text-2xl font-semibold tracking-tight">

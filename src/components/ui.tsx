@@ -1,3 +1,4 @@
+import type { LucideIcon, LucideProps } from "lucide-react";
 import type { ComponentPropsWithoutRef, ElementType, ReactNode } from "react";
 import { cn } from "@/lib/utils";
 
@@ -132,7 +133,7 @@ export function EmptyState({
     <div className="flex flex-col items-center justify-center rounded-2xl border border-dashed border-ink-200 px-6 py-14 text-center dark:border-white/10">
       {Icon && (
         <div className="mb-4 grid size-11 place-items-center rounded-xl bg-ink-100 text-ink-500 dark:bg-white/[0.06] dark:text-ink-300">
-          <Icon className="size-5" />
+          <Icon className="size-5" suppressHydrationWarning />
         </div>
       )}
       <h3 className="text-sm font-semibold text-ink-900 dark:text-white">{title}</h3>
@@ -144,9 +145,43 @@ export function EmptyState({
 
 export function Spinner({ className }: { className?: string }) {
   return (
-    <svg className={cn("size-4 animate-spin", className)} viewBox="0 0 24 24" fill="none" aria-hidden>
+    <svg
+      className={cn("size-4 animate-spin", className)}
+      viewBox="0 0 24 24"
+      fill="none"
+      aria-hidden
+      suppressHydrationWarning
+    >
       <circle cx="12" cy="12" r="9" stroke="currentColor" strokeOpacity="0.25" strokeWidth="3" />
       <path d="M21 12a9 9 0 0 0-9-9" stroke="currentColor" strokeWidth="3" strokeLinecap="round" />
     </svg>
   );
+}
+
+/* -------------------------------------------------------------------------
+ * Browser-extension boundary
+ * ---------------------------------------------------------------------- */
+
+/**
+ * An icon that tolerates browser-extension DOM rewrites.
+ *
+ * Dark Reader (and similar extensions) rewrite the DOM *before* React hydrates:
+ * they inject `--darkreader-inline-*` custom properties and
+ * `data-darkreader-inline-*` attributes onto every `<svg>` and onto any element
+ * carrying an inline colour/background/border style. React then compares the
+ * already-mutated server DOM against what it would have rendered and reports:
+ *
+ *   "A tree hydrated but some attributes of the server rendered HTML didn't
+ *    match the client properties. This won't be patched up."
+ *
+ * The rewrite is cosmetic — the extension re-applies it after hydration — so the
+ * correct fix is to opt those nodes out of the comparison instead of letting
+ * React discard and re-render the server HTML.
+ *
+ * `suppressHydrationWarning` applies to **one element only and does not
+ * inherit**, so every icon an extension may touch must render through this
+ * component (or carry the attribute itself, as inline-styled nodes do).
+ */
+export function Icon({ icon: Glyph, ...props }: { icon: LucideIcon } & LucideProps) {
+  return <Glyph suppressHydrationWarning {...props} />;
 }
