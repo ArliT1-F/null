@@ -1,0 +1,25 @@
+# ---------------------------------------------------------------------------
+# Vessel — cloud production overlay
+#
+#   docker compose -f docker-compose.yml -f docker-compose.cloud.yml up -d
+#
+# Differences from self-hosted:
+# · Media lives in S3-compatible object storage (Cloudflare R2) instead of a
+#   local volume, so the app container becomes stateless and replaceable.
+# · No tunnel service: the cloud provider terminates TLS and routes to the app.
+# · Optionally point DATABASE_URL at a managed PostgreSQL instance by removing
+#   the local db dependency in your own override.
+# ---------------------------------------------------------------------------
+
+services:
+  web:
+    environment:
+      STORAGE_DRIVER: s3
+      TRUST_PROXY: "true"
+    ports:
+      # Behind a load balancer; keep it on the private interface of the host.
+      - "${BIND_ADDRESS:-127.0.0.1}:${WEB_PORT:-3000}:3000"
+    deploy:
+      resources:
+        limits:
+          memory: ${WEB_MEMORY_LIMIT:-1024M}
