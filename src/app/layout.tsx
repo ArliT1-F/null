@@ -48,7 +48,12 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
       <head>
         <script dangerouslySetInnerHTML={{ __html: themeScript }} />
       </head>
-      <body className="min-h-dvh">{children}</body>
+      {/* Extensions also set scheme/background values on the root elements;
+          the <html> flag does not cover <body>, and suppression never
+          inherits. See the note on <Icon> in components/ui.tsx. */}
+      <body className="min-h-dvh" suppressHydrationWarning>
+        {children}
+      </body>
     </html>
   );
 }

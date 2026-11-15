@@ -152,8 +152,8 @@ export function Spinner({ className }: { className?: string }) {
       aria-hidden
       suppressHydrationWarning
     >
-      <circle cx="12" cy="12" r="9" stroke="currentColor" strokeOpacity="0.25" strokeWidth="3" />
-      <path d="M21 12a9 9 0 0 0-9-9" stroke="currentColor" strokeWidth="3" strokeLinecap="round" />
+      <circle cx="12" cy="12" r="9" stroke="currentColor" strokeOpacity="0.25" strokeWidth="3" suppressHydrationWarning />
+      <path d="M21 12a9 9 0 0 0-9-9" stroke="currentColor" strokeWidth="3" strokeLinecap="round" suppressHydrationWarning />
     </svg>
   );
 }
@@ -167,8 +167,10 @@ export function Spinner({ className }: { className?: string }) {
  *
  * Dark Reader (and similar extensions) rewrite the DOM *before* React hydrates:
  * they inject `--darkreader-inline-*` custom properties and
- * `data-darkreader-inline-*` attributes onto every `<svg>` and onto any element
- * carrying an inline colour/background/border style. React then compares the
+ * `data-darkreader-inline-*` attributes onto every `<svg>`, onto any element
+ * carrying an inline colour/background/border style, and onto any svg *child*
+ * that repeats `stroke` itself (lucide icons avoid the last case only because
+ * their paths inherit it from the `<svg>`). React then compares the
  * already-mutated server DOM against what it would have rendered and reports:
  *
  *   "A tree hydrated but some attributes of the server rendered HTML didn't
@@ -180,7 +182,9 @@ export function Spinner({ className }: { className?: string }) {
  *
  * `suppressHydrationWarning` applies to **one element only and does not
  * inherit**, so every icon an extension may touch must render through this
- * component (or carry the attribute itself, as inline-styled nodes do).
+ * component, and hand-written svgs must repeat the attribute on each `<path>`
+ * or `<circle>` that sets its own `stroke` — the parent `<svg>` flag does not
+ * cover its children.
  */
 export function Icon({ icon: Glyph, ...props }: { icon: LucideIcon } & LucideProps) {
   return <Glyph suppressHydrationWarning {...props} />;

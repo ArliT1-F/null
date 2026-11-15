@@ -33,7 +33,7 @@ export function ControlGroup({
           aria-hidden
           suppressHydrationWarning
         >
-          <path d="m6 9 6 6 6-6" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+          <path d="m6 9 6 6 6-6" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" suppressHydrationWarning />
         </svg>
       </summary>
       <div className="space-y-3.5 px-4 pb-5 pt-1">{children}</div>
