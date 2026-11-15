@@ -23,7 +23,7 @@ import {
   Upload,
 } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState, useTransition } from "react";
-import { Button, Input, Spinner } from "@/components/ui";
+import { Button, Icon, Input, Spinner } from "@/components/ui";
 import { ProfileView, type RenderLink } from "@/components/profile/profile-renderer";
 import { normalizeProfileConfig, type ProfileConfig } from "@/lib/profile-config";
 import { backgroundImageUrl } from "@/app/dashboard/editor/preview-css";
@@ -182,6 +182,7 @@ export function EditorClient(props: EditorProps) {
         {backgroundUrl && (
           <div
             className="pointer-events-none absolute inset-0 bg-cover bg-center"
+            suppressHydrationWarning
             style={{ backgroundImage: `url(${backgroundUrl})`, filter: `blur(${store.draft.theme.background.blur}px)`, transform: "scale(1.06)" }}
           />
         )}
@@ -227,14 +228,14 @@ export function EditorClient(props: EditorProps) {
 
           <div className="flex items-center gap-1.5">
             <Button variant="quiet" size="sm" onClick={store.undo} disabled={!store.canUndo} title="Undo (Ctrl+Z)" aria-label="Undo">
-              <Undo2 className="size-4" />
+              <Icon icon={Undo2} className="size-4" />
             </Button>
             <Button variant="quiet" size="sm" onClick={store.redo} disabled={!store.canRedo} title="Redo (Ctrl+Shift+Z)" aria-label="Redo">
-              <Redo2 className="size-4" />
+              <Icon icon={Redo2} className="size-4" />
             </Button>
             <span className="mx-1 h-5 w-px bg-ink-200 dark:bg-white/10" />
             <Button variant="ghost" size="sm" onClick={() => void persist()} disabled={saving}>
-              {saving ? <Spinner className="size-3.5" /> : <Save className="size-3.5" />}
+              {saving ? <Spinner className="size-3.5" /> : <Icon icon={Save} className="size-3.5" />}
               Save
             </Button>
             <Button
@@ -256,7 +257,7 @@ export function EditorClient(props: EditorProps) {
                 })
               }
             >
-              {publishing ? <Spinner className="size-3.5" /> : <Sparkles className="size-3.5" />}
+              {publishing ? <Spinner className="size-3.5" /> : <Icon icon={Sparkles} className="size-3.5" />}
               Publish
             </Button>
             <a
@@ -266,7 +267,7 @@ export function EditorClient(props: EditorProps) {
               className="btn-quiet hidden sm:inline-flex"
               title="Open the published profile"
             >
-              <ExternalLink className="size-4" />
+              <Icon icon={ExternalLink} className="size-4" />
             </a>
           </div>
         </div>
@@ -284,7 +285,7 @@ export function EditorClient(props: EditorProps) {
                   { key: "links", label: "Links", icon: Link2 },
                   { key: "publish", label: "Publish", icon: LayoutTemplate },
                 ] as const
-              ).map(({ key, label, icon: Icon }) => (
+              ).map(({ key, label, icon: TabIcon }) => (
                 <button
                   key={key}
                   role="tab"
@@ -297,7 +298,7 @@ export function EditorClient(props: EditorProps) {
                       : "text-ink-400 hover:text-ink-700 dark:hover:text-ink-200",
                   )}
                 >
-                  <Icon className="size-4" />
+                  <Icon icon={TabIcon} className="size-4" />
                   {label}
                 </button>
               ))}
@@ -378,7 +379,7 @@ export function EditorClient(props: EditorProps) {
                   device === "desktop" ? "bg-ink-950 text-white dark:bg-brand-400 dark:text-[#04231b]" : "text-ink-500",
                 )}
               >
-                <Monitor className="size-3.5" /> Desktop
+                <Icon icon={Monitor} className="size-3.5" /> Desktop
               </button>
               <button
                 onClick={() => setDevice("mobile")}
@@ -388,7 +389,7 @@ export function EditorClient(props: EditorProps) {
                   device === "mobile" ? "bg-ink-950 text-white dark:bg-brand-400 dark:text-[#04231b]" : "text-ink-500",
                 )}
               >
-                <Smartphone className="size-3.5" /> Mobile
+                <Icon icon={Smartphone} className="size-3.5" /> Mobile
               </button>
             </div>
             <p className="hidden text-[11px] text-ink-400 sm:block">Live preview — visitors see the last published version</p>
@@ -736,7 +737,7 @@ function IdentityPanel({
             disabled={avatarBusy}
             className="text-[11px]"
           >
-            {avatarBusy ? <Spinner className="size-3" /> : <Upload className="size-3" />}
+            {avatarBusy ? <Spinner className="size-3" /> : <Icon icon={Upload} className="size-3" />}
             {identity.avatarUrl ? "Replace" : "Upload"}
           </Button>
           {identity.avatarUrl && (
@@ -842,7 +843,7 @@ function IdentityPanel({
             })
           }
         >
-          {pending ? <Spinner className="size-3.5" /> : <Save className="size-3.5" />}
+          {pending ? <Spinner className="size-3.5" /> : <Icon icon={Save} className="size-3.5" />}
           Save details
         </Button>
         <p className="text-center text-[11px] text-ink-400">
@@ -917,7 +918,7 @@ function LinksPanel({
         </p>
         {!adding && editingId === null && (
           <Button variant="ghost" size="sm" onClick={() => setAdding(true)} className="text-[11px]">
-            <Plus className="size-3" /> Add
+            <Icon icon={Plus} className="size-3" /> Add
           </Button>
         )}
       </div>
@@ -989,17 +990,17 @@ function LinksPanel({
                 !link.visible && "opacity-55",
               )}
             >
-              <GripVertical className="size-3.5 shrink-0 cursor-grab text-ink-300" aria-hidden />
+              <Icon icon={GripVertical} className="size-3.5 shrink-0 cursor-grab text-ink-300" aria-hidden />
               <div className="min-w-0 flex-1">
                 <p className="truncate text-[12px] font-medium">{link.label}</p>
                 <p className="truncate text-[10px] text-ink-400">{link.url}</p>
               </div>
               <div className="flex shrink-0 items-center">
                 <button onClick={() => move(index, -1)} disabled={index === 0} className="btn-quiet !p-1 disabled:opacity-30" aria-label={`Move ${link.label} up`}>
-                  <ChevronUp className="size-3" />
+                  <Icon icon={ChevronUp} className="size-3" />
                 </button>
                 <button onClick={() => move(index, 1)} disabled={index === links.length - 1} className="btn-quiet !p-1 disabled:opacity-30" aria-label={`Move ${link.label} down`}>
-                  <ChevronDown className="size-3" />
+                  <Icon icon={ChevronDown} className="size-3" />
                 </button>
                 <button
                   onClick={async () => {
@@ -1011,7 +1012,7 @@ function LinksPanel({
                   className="btn-quiet !p-1"
                   aria-label={link.visible ? `Hide ${link.label}` : `Show ${link.label}`}
                 >
-                  {link.visible ? <Eye className="size-3" /> : <EyeOff className="size-3" />}
+                  {link.visible ? <Icon icon={Eye} className="size-3" /> : <Icon icon={EyeOff} className="size-3" />}
                 </button>
                 <button
                   onClick={() => {
@@ -1022,7 +1023,7 @@ function LinksPanel({
                   className="btn-quiet !p-1"
                   aria-label={`Edit ${link.label}`}
                 >
-                  <Pencil className="size-3" />
+                  <Icon icon={Pencil} className="size-3" />
                 </button>
                 <button
                   onClick={async () => {
@@ -1033,7 +1034,7 @@ function LinksPanel({
                   className="btn-quiet !p-1 text-red-500 hover:!bg-red-50 dark:hover:!bg-red-500/10"
                   aria-label={`Delete ${link.label}`}
                 >
-                  <Trash2 className="size-3" />
+                  <Icon icon={Trash2} className="size-3" />
                 </button>
               </div>
             </li>
@@ -1083,7 +1084,7 @@ function PublishPanel({
       </div>
 
       <Button variant="accent" className="mt-3 w-full text-[12px]" onClick={onPublish} disabled={publishing}>
-        {publishing ? <Spinner className="size-3.5" /> : <Sparkles className="size-3.5" />}
+        {publishing ? <Spinner className="size-3.5" /> : <Icon icon={Sparkles} className="size-3.5" />}
         Publish now
       </Button>
 
@@ -1109,7 +1110,7 @@ function PublishPanel({
                     className="flex items-center gap-1 text-[11px] text-ink-500 hover:text-ink-900 dark:hover:text-white"
                     title="Restore this version as a new publish"
                   >
-                    <RotateCcw className="size-3" /> Restore
+                    <Icon icon={RotateCcw} className="size-3" /> Restore
                   </button>
                 )}
               </li>
@@ -1184,7 +1185,7 @@ function BackgroundUpload({
       <p className="mb-1.5 text-xs text-ink-600 dark:text-ink-300">Background image</p>
       <div className="flex items-center gap-2">
         <Button variant="ghost" size="sm" className="text-[11px]" onClick={() => inputRef.current?.click()} disabled={busy}>
-          {busy ? <Spinner className="size-3" /> : <Upload className="size-3" />}
+          {busy ? <Spinner className="size-3" /> : <Icon icon={Upload} className="size-3" />}
           {value ? "Replace" : "Upload"}
         </Button>
         {value && (
@@ -1211,6 +1212,7 @@ function BackgroundUpload({
       {value && (
         <div
           className="mt-2 h-16 w-full rounded-lg border border-ink-200 bg-cover bg-center dark:border-white/10"
+          suppressHydrationWarning
           style={{ backgroundImage: `url(${value})` }}
           aria-hidden
         />

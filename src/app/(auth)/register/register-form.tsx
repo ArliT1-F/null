@@ -2,7 +2,7 @@
 
 import { Check, X } from "lucide-react";
 import { useActionState, useEffect, useState } from "react";
-import { Alert, Button, Field, Input, Spinner } from "@/components/ui";
+import { Alert, Button, Field, Icon, Input, Spinner } from "@/components/ui";
 import { passwordStrength } from "@/lib/password-strength";
 import { registerAction, type FormState } from "../actions";
 
@@ -89,8 +89,8 @@ export function RegisterForm() {
           />
           <span className="absolute right-3 top-1/2 -translate-y-1/2" id="username-status">
             {availability.state === "checking" && <Spinner className="size-3.5 text-ink-400" />}
-            {availability.state === "available" && <Check className="size-4 text-brand-500" />}
-            {availability.state === "taken" && <X className="size-4 text-red-500" />}
+            {availability.state === "available" && <Icon icon={Check} className="size-4 text-brand-500" />}
+            {availability.state === "taken" && <Icon icon={X} className="size-4 text-red-500" />}
           </span>
         </div>
         {availability.state === "taken" && (

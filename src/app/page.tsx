@@ -16,6 +16,7 @@ import { ProfilePreviewCard } from "@/components/profile-preview-card";
 import { SiteFooter } from "@/components/site-footer";
 import { SiteHeader } from "@/components/site-header";
 import { ThemeToggle } from "@/components/theme-toggle";
+import { Icon } from "@/components/ui";
 import { configWithTheme } from "@/lib/profile-config";
 import { getCurrentUser } from "@/lib/auth/session";
 
@@ -95,7 +96,7 @@ export default async function LandingPage() {
         <div className="relative mx-auto grid max-w-6xl items-center gap-14 px-4 pb-20 pt-16 sm:px-6 lg:grid-cols-[1.05fr_0.95fr] lg:pb-28 lg:pt-24">
           <div className="animate-fade-up">
             <div className="chip-accent mb-5 inline-flex">
-              <Sparkles className="size-3.5" />
+              <Icon icon={Sparkles} className="size-3.5" />
               V1 — now open
             </div>
             <h1 className="font-display text-[2.6rem] font-semibold leading-[1.04] tracking-[-0.03em] text-balance sm:text-6xl">
@@ -117,7 +118,7 @@ export default async function LandingPage() {
             <div className="mt-8 flex flex-wrap items-center gap-3">
               <Link href={user ? "/dashboard" : "/register"} className="btn-primary px-6 py-3 text-[15px]">
                 {user ? "Go to dashboard" : "Claim your name"}
-                <ArrowRight className="size-4" />
+                <Icon icon={ArrowRight} className="size-4" />
               </Link>
               <Link href="/explore" className="btn-ghost px-5 py-3 text-[15px]">
                 Browse profiles
@@ -194,13 +195,13 @@ export default async function LandingPage() {
         </div>
 
         <div className="mt-12 grid gap-5 sm:grid-cols-2 lg:grid-cols-3">
-          {FEATURES.map(({ icon: Icon, title, body }) => (
+          {FEATURES.map(({ icon: FeatureIcon, title, body }) => (
             <div
               key={title}
               className="panel group p-6 transition-all duration-300 hover:-translate-y-0.5 hover:shadow-lg"
             >
               <div className="mb-4 grid size-10 place-items-center rounded-xl bg-ink-950 text-white transition-colors group-hover:bg-brand-500 dark:bg-white/10 dark:group-hover:bg-brand-400 dark:group-hover:text-[#04231b]">
-                <Icon className="size-[18px]" />
+                <Icon icon={FeatureIcon} className="size-[18px]" />
               </div>
               <h3 className="text-[15px] font-semibold">{title}</h3>
               <p className="mt-1.5 text-sm leading-relaxed text-ink-500 dark:text-ink-400">{body}</p>
@@ -230,9 +231,9 @@ export default async function LandingPage() {
                   { icon: ShieldCheck, text: "No database or admin ports exposed" },
                   { icon: Globe, text: "Cloudflare Tunnel, no port forwarding" },
                   { icon: Github, text: "Documented backup and restore" },
-                ].map(({ icon: Icon, text }) => (
+                ].map(({ icon: ItemIcon, text }) => (
                   <li key={text} className="flex items-center gap-2.5">
-                    <Icon className="size-4 text-brand-300" />
+                    <Icon icon={ItemIcon} className="size-4 text-brand-300" />
                     {text}
                   </li>
                 ))}
@@ -240,7 +241,7 @@ export default async function LandingPage() {
             </div>
             <Link href="/register" className="btn-accent w-full px-6 py-3 text-[15px] lg:w-auto">
               Start building
-              <ArrowRight className="size-4" />
+              <Icon icon={ArrowRight} className="size-4" />
             </Link>
           </div>
         </div>

@@ -12,7 +12,7 @@ import {
 } from "lucide-react";
 import type { Metadata } from "next";
 import Link from "next/link";
-import { Badge, Card, EmptyState } from "@/components/ui";
+import { Badge, Card, EmptyState, Icon } from "@/components/ui";
 import { getCurrentUser } from "@/lib/auth/session";
 import { getEditorData, listVersions } from "@/lib/profiles/service";
 import { timeAgo } from "@/lib/utils";
@@ -61,12 +61,12 @@ export default async function DashboardPage() {
         </div>
         <div className="flex flex-wrap gap-2">
           <Link href="/dashboard/editor" className="btn-primary">
-            <PenLine className="size-4" />
+            <Icon icon={PenLine} className="size-4" />
             Open editor
           </Link>
           {published && (
             <Link href={profileUrl} className="btn-ghost" target="_blank" rel="noopener">
-              <ExternalLink className="size-4" />
+              <Icon icon={ExternalLink} className="size-4" />
               View live
             </Link>
           )}
@@ -180,7 +180,7 @@ export default async function DashboardPage() {
 }
 
 function StatCard({
-  icon: Icon,
+  icon: TileIcon,
   label,
   value,
   hint,
@@ -201,7 +201,7 @@ function StatCard({
     <div className="panel p-4">
       <div className="flex items-center gap-2">
         <span className={`grid size-7 place-items-center rounded-lg ${toneClasses[tone]}`}>
-          <Icon className="size-3.5" />
+          <Icon icon={TileIcon} className="size-3.5" />
         </span>
         <span className="text-xs font-medium text-ink-500 dark:text-ink-400">{label}</span>
       </div>
@@ -213,7 +213,7 @@ function StatCard({
 
 function ActionTile({
   href,
-  icon: Icon,
+  icon: TileIcon,
   title,
   body,
 }: {
@@ -228,12 +228,12 @@ function ActionTile({
       className="group flex items-start gap-3 rounded-xl border border-ink-200/80 p-3.5 transition-all hover:-translate-y-0.5 hover:border-ink-300 hover:shadow-sm dark:border-white/10 dark:hover:border-white/20"
     >
       <span className="grid size-8 shrink-0 place-items-center rounded-lg bg-ink-100 text-ink-600 transition-colors group-hover:bg-ink-950 group-hover:text-white dark:bg-white/[0.06] dark:text-ink-300 dark:group-hover:bg-brand-400 dark:group-hover:text-[#04231b]">
-        <Icon className="size-4" />
+        <Icon icon={TileIcon} className="size-4" />
       </span>
       <span className="min-w-0">
         <span className="flex items-center gap-1 text-[13px] font-medium">
           {title}
-          <ArrowUpRight className="size-3 text-ink-400 opacity-0 transition-opacity group-hover:opacity-100" />
+          <Icon icon={ArrowUpRight} className="size-3 text-ink-400 opacity-0 transition-opacity group-hover:opacity-100" />
         </span>
         <span className="mt-0.5 block text-[11px] leading-relaxed text-ink-500 dark:text-ink-400">{body}</span>
       </span>

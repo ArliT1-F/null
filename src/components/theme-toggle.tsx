@@ -2,6 +2,7 @@
 
 import { Moon, Sun } from "lucide-react";
 import { useEffect, useState } from "react";
+import { Icon } from "@/components/ui";
 
 /**
  * Theme toggle. Persists the explicit choice in localStorage; when the user has
@@ -26,6 +27,8 @@ export function ThemeToggle({ className = "" }: { className?: string }) {
     setDark(next);
   }
 
+  const Glyph = dark ? Sun : Moon;
+
   return (
     <button
       type="button"
@@ -34,7 +37,9 @@ export function ThemeToggle({ className = "" }: { className?: string }) {
       aria-label={dark ? "Switch to light theme" : "Switch to dark theme"}
       title="Toggle theme"
     >
-      {dark ? <Sun className="size-[18px]" /> : <Moon className="size-[18px]" />}
+      {/* Rendered through <Icon> so Dark Reader's pre-hydration rewrite of the
+          svg attributes cannot trip React's hydration check. */}
+      <Icon icon={Glyph} className="size-[18px]" />
     </button>
   );
 }

@@ -142,6 +142,12 @@ links — to the server log. Copy the link into the browser.
   from the session.
 - New user-facing strings go through the existing components; there is no i18n
   layer in V1.
+- Icons render through `<Icon>` from `src/components/ui`, and any node whose
+  inline `style` sets a colour, background or border carries
+  `suppressHydrationWarning` on that node. Both exist to survive pre-hydration
+  DOM rewrites by browser extensions — see "Hydration error about attributes"
+  below. The suppression does not inherit, so it belongs on each element an
+  extension can touch, not on a wrapper.
 
 ## Troubleshooting
 
@@ -156,6 +162,22 @@ the Docker overlay or point `DATABASE_URL` elsewhere.
 
 **Images fail to upload** — check `MEDIA_ROOT` exists and is writable by the app
 user. In Docker it is the `media_data` volume.
+
+**`A tree hydrated but some attributes of the server rendered HTML didn't match
+the client properties`** — if the diff mentions `data-darkreader-inline-*`,
+`--darkreader-inline-*` or expanded `background-color`/`border-*` longhands, the
+page is fine: a browser extension (Dark Reader is the usual one) rewrote the DOM
+between the server paint and hydration, and React compares against the already
+mutated markup. Confirm by reloading in a private window or with the extension
+disabled for `localhost` — the error disappears and nothing else changes.
+
+The app already opts the affected nodes out of that comparison (icons via
+`<Icon>`, inline-styled nodes on the profile preview/renderer via
+`suppressHydrationWarning`), so a *new* occurrence on your branch usually means a
+new icon was added directly from `lucide-react`, or a new inline `style` with a
+colour/background was introduced. Any other mismatch shape is a real bug: do
+not suppress it, fix the branch on `Date.now()`, `Math.random()` or locale
+formatting.
 
 **A public profile returns 500 after changing caching code** — almost certainly a
 date crossing a serialising cache boundary and coming back as a string. Wrap the
