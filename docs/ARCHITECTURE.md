@@ -70,6 +70,40 @@ concurrent publishes cannot allocate the same version number.
 The public profile ships **zero kilobytes of JavaScript** for the page body. The
 only stylesheet is generated from validated tokens (`src/lib/profile-css.ts`).
 
+## Caching contract
+
+Public profiles are read-mostly, so they are cached — but a publish must be
+visible immediately. Two mechanisms combine:
+
+1. **Route-level ISR** (`export const revalidate = 60`) serves cached HTML.
+2. **Tag-based invalidation**: the profile loader wraps `getPublishedProfile()` in
+   `unstable_cache` with the tag `profile:<username>`, and
+   `publishProfile()` (via the server action) calls
+   `revalidateTag("profile:<username>")`.
+
+Verified behaviour: after a publish, the next request already returns the new
+snapshot — no 60-second wait. Without the tag the page would only refresh on the
+timer, and the first request after expiry would serve *stale* HTML while it
+regenerated in the background (Next.js ISR is stale-while-revalidate, not
+stale-if-error-while-blocking).
+
+### The cache boundary rule
+
+`unstable_cache` serialises its result through JSON. **`Date` objects come back
+as strings.** Any field that crosses a cache boundary must be normalised before
+use:
+
+```ts
+// src/app/[username]/page.tsx
+return cached().then(rehydrateNullableProfileDates);
+```
+
+Skipping this produced a production 500 on every public profile
+(`c.publishedAt.toISOString is not a function`). The rule applies to *every*
+serialising cache (Redis included, if one is ever added), not just Next.js.
+`src/lib/profiles/serialize.ts` owns the conversion and
+`tests/profile-serialize.test.ts` pins the contract.
+
 ## Profile customisation is data, not code
 
 A profile owns a `ProfileConfig` validated by Zod:

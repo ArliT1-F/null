@@ -156,3 +156,9 @@ the Docker overlay or point `DATABASE_URL` elsewhere.
 
 **Images fail to upload** — check `MEDIA_ROOT` exists and is writable by the app
 user. In Docker it is the `media_data` volume.
+
+**A public profile returns 500 after changing caching code** — almost certainly a
+date crossing a serialising cache boundary and coming back as a string. Wrap the
+loader in `rehydrateNullableProfileDates` (see
+`src/app/[username]/page.tsx`). Run `npm test` — `profile-serialize.test.ts`
+covers exactly this and will fail first.

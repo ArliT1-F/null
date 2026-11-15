@@ -5,6 +5,7 @@ import { ProfileView, type RenderProfile } from "@/components/profile/profile-re
 import { env } from "@/lib/env";
 import { buildProfileCss, pageBackground } from "@/lib/profile-css";
 import { getPublishedProfile } from "@/lib/profiles/service";
+import { rehydrateNullableProfileDates } from "@/lib/profiles/serialize";
 import { RESERVED_USERNAMES } from "@/lib/username";
 import { truncate } from "@/lib/utils";
 
@@ -35,7 +36,10 @@ function loadPublishedProfile(username: string) {
     ["published-profile", canonical],
     { revalidate: 60, tags: [`profile:${canonical}`] },
   );
-  return cached();
+
+  // The cache round-trips through JSON, which turns dates into strings. Hydrate
+  // before anything calls a Date method on the result.
+  return cached().then(rehydrateNullableProfileDates);
 }
 
 type PageProps = { params: Promise<{ username: string }> };
