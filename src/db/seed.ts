@@ -201,6 +201,158 @@ export const THEME_SEEDS: ThemeSeed[] = [
       effects: { animatedBackground: true, glow: true },
     },
   },
+  {
+    slug: "prism-mesh",
+    name: "Prism Mesh",
+    category: "Atmospheric",
+    description: "Luminous three-point mesh gradient with frosted glass buttons.",
+    sortOrder: 130,
+    tokens: {
+      background: {
+        type: "mesh",
+        color: "#090b14",
+        gradientFrom: "#1d2b64",
+        gradientMid: "#2c1654",
+        gradientTo: "#0f3d3e",
+      },
+      card: { surface: "#ffffff", opacity: 7, borderColor: "#ffffff", borderOpacity: 16, blur: 20, radius: "xl" },
+      text: { primary: "#f8fafc", muted: "#b6c2d9", accent: "#67e8f9" },
+      typography: { font: "space-grotesk", headingWeight: "700" },
+      buttons: { style: "glass", radius: "xl", fillOpacity: 10 },
+      effects: { animatedBackground: true, backgroundMotion: "aurora", glow: true, entrance: "blur", stagger: true },
+    },
+  },
+  {
+    slug: "editorial-rose",
+    name: "Editorial Rose",
+    category: "Editorial",
+    description: "Playfair headlines over blush linen and deep burgundy ink.",
+    sortOrder: 140,
+    tokens: {
+      background: { type: "solid", color: "#fbf4f2" },
+      card: { surface: "#ffffff", opacity: 96, borderColor: "#4a1c2a", borderOpacity: 12, shadow: "soft", radius: "lg" },
+      text: { primary: "#261119", muted: "#73545e", accent: "#9f1239" },
+      typography: { font: "dm-sans", headingFont: "playfair", headingWeight: "700", lineHeight: 1.6 },
+      buttons: { style: "outline", radius: "full", fillOpacity: 4 },
+      effects: { animatedBackground: false, glow: false, entrance: "fade", cardHover: "lift" },
+    },
+  },
+  {
+    slug: "tokyo-midnight",
+    name: "Tokyo Midnight",
+    category: "Neon",
+    description: "Electric magenta and indigo mesh built for night-owl creators.",
+    sortOrder: 150,
+    tokens: {
+      background: {
+        type: "mesh",
+        color: "#080710",
+        gradientFrom: "#241142",
+        gradientMid: "#3b0a2a",
+        gradientTo: "#0b2244",
+      },
+      card: { surface: "#0e0c1d", opacity: 84, borderColor: "#f472b6", borderOpacity: 24, blur: 16, radius: "xl" },
+      text: { primary: "#fdf4ff", muted: "#c4b5d6", accent: "#f472b6" },
+      typography: { font: "outfit", headingWeight: "700" },
+      buttons: { style: "soft", radius: "lg", fillOpacity: 12 },
+      effects: { animatedBackground: true, backgroundMotion: "pulse", glow: true, noise: true, cardHover: "glow" },
+    },
+  },
+  {
+    slug: "matcha-studio",
+    name: "Matcha Studio",
+    category: "Warm",
+    description: "Calm sage ceramic tones paired with crisp geometric type.",
+    sortOrder: 160,
+    tokens: {
+      background: { type: "gradient", color: "#eef3ec", gradientFrom: "#f3f6ef", gradientTo: "#e3ecde", gradientAngle: 160 },
+      card: { surface: "#ffffff", opacity: 92, borderColor: "#2d4732", borderOpacity: 12, shadow: "soft", radius: "xl" },
+      text: { primary: "#18261c", muted: "#556b5b", accent: "#2f6f44" },
+      typography: { font: "jakarta", headingWeight: "700" },
+      buttons: { style: "soft", radius: "lg", fill: "#2f6f44", fillOpacity: 10 },
+      effects: { animatedBackground: false, glow: false, entrance: "rise", stagger: true },
+    },
+  },
+  {
+    slug: "blueprint",
+    name: "Blueprint",
+    category: "Developer",
+    description: "Drafting-table cobalt and JetBrains Mono for systems builders.",
+    sortOrder: 170,
+    tokens: {
+      background: { type: "gradient", gradientFrom: "#07182e", gradientTo: "#0b2748", gradientAngle: 145 },
+      card: { surface: "#061529", opacity: 90, borderColor: "#60a5fa", borderOpacity: 32, radius: "sm", blur: 6 },
+      text: { primary: "#e8f2ff", muted: "#8fb3d9", accent: "#60a5fa" },
+      typography: { font: "jetbrains-mono", baseSize: 14, headingWeight: "600", letterSpacing: -0.5 },
+      buttons: { style: "outline", radius: "sm", fillOpacity: 8 },
+      effects: { animatedBackground: false, glow: true, entrance: "fade" },
+    },
+  },
+  {
+    slug: "cobalt-glass",
+    name: "Cobalt Glass",
+    category: "Glass",
+    description: "Translucent sapphire panel floating over a deep ocean gradient.",
+    sortOrder: 180,
+    tokens: {
+      background: {
+        type: "gradient",
+        gradientFrom: "#081226",
+        gradientMid: "#0f2c59",
+        gradientTo: "#0b192c",
+        gradientAngle: 125,
+      },
+      card: { surface: "#ffffff", opacity: 8, borderColor: "#93c5fd", borderOpacity: 22, blur: 24, radius: "xl" },
+      text: { primary: "#f0f7ff", muted: "#a6c1e1", accent: "#38bdf8" },
+      typography: { font: "jakarta", headingFont: "space-grotesk", headingWeight: "700" },
+      buttons: { style: "glass", radius: "lg", fillOpacity: 10 },
+      effects: { animatedBackground: true, backgroundMotion: "drift", glow: true, entrance: "scale" },
+    },
+  },
+  {
+    slug: "solstice",
+    name: "Solstice",
+    category: "Atmospheric",
+    description: "Golden-hour amber melting into dusk terracotta and plum.",
+    sortOrder: 190,
+    tokens: {
+      background: {
+        type: "mesh",
+        color: "#170d12",
+        gradientFrom: "#4a1d1f",
+        gradientMid: "#3b1d36",
+        gradientTo: "#2d1f0d",
+      },
+      card: { surface: "#ffffff", opacity: 6, borderColor: "#fdba74", borderOpacity: 18, blur: 18, radius: "xl" },
+      text: { primary: "#fff7ed", muted: "#d6b8a6", accent: "#fb923c" },
+      typography: { font: "dm-sans", headingFont: "outfit", headingWeight: "700" },
+      buttons: { style: "soft", radius: "full", fillOpacity: 10 },
+      effects: { animatedBackground: true, backgroundMotion: "aurora", glow: true, noise: true, stagger: true },
+    },
+  },
+  {
+    slug: "cyber-grid",
+    name: "Cyber Grid",
+    category: "Developer",
+    description: "Sharp zero-radius Fira Code terminal card with acid cyan trim.",
+    sortOrder: 200,
+    tokens: {
+      background: { type: "solid", color: "#05080a" },
+      card: {
+        surface: "#0a1014",
+        opacity: 96,
+        borderColor: "#22d3ee",
+        borderOpacity: 36,
+        borderWidth: 1,
+        radius: "none",
+        shadow: "strong",
+      },
+      text: { primary: "#ecfeff", muted: "#7ca2ab", accent: "#22d3ee" },
+      typography: { font: "fira-code", baseSize: 14, headingWeight: "600" },
+      buttons: { style: "outline", radius: "none", fillOpacity: 8 },
+      effects: { animatedBackground: true, backgroundMotion: "pulse", glow: true, entrance: "rise", cardHover: "glow" },
+    },
+  },
 ];
 
 async function seedThemes() {
@@ -282,8 +434,15 @@ async function main() {
   console.log("[seed] done");
 }
 
-main().catch(async (error) => {
-  console.error("[seed] failed", error);
-  await pool.end().catch(() => {});
-  process.exit(1);
-});
+const isDirectRun =
+  typeof process !== "undefined" &&
+  typeof process.argv[1] === "string" &&
+  /[/\\]seed\.(ts|js|mjs)$/.test(process.argv[1]);
+
+if (isDirectRun) {
+  main().catch(async (error) => {
+    console.error("[seed] failed", error);
+    await pool.end().catch(() => {});
+    process.exit(1);
+  });
+}

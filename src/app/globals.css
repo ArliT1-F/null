@@ -96,6 +96,15 @@
     @apply bg-brand-400 text-[#04231b] hover:bg-brand-300;
   }
 
+  .btn-secondary {
+    @apply btn rounded-xl border border-ink-200 bg-white px-3.5 py-2 text-ink-800
+      hover:border-ink-300 hover:bg-ink-50 active:scale-[0.985];
+  }
+
+  .dark .btn-secondary {
+    @apply border-white/[0.12] bg-white/[0.05] text-ink-100 hover:border-white/20 hover:bg-white/[0.09];
+  }
+
   .btn-ghost {
     @apply btn border border-ink-200 bg-white px-4 py-2 text-ink-700
       hover:border-ink-300 hover:bg-ink-50 active:scale-[0.985];

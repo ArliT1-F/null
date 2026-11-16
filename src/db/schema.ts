@@ -42,7 +42,15 @@ export const authTokenPurposeEnum = pgEnum("auth_token_purpose", [
   "EMAIL_CHANGE",
 ]);
 export const profileVisibilityEnum = pgEnum("profile_visibility", ["PUBLIC", "UNLISTED", "PRIVATE"]);
-export const mediaKindEnum = pgEnum("media_kind", ["AVATAR", "BACKGROUND", "GALLERY", "AUDIO", "DOCUMENT"]);
+export const mediaKindEnum = pgEnum("media_kind", [
+  "AVATAR",
+  "BACKGROUND",
+  "GALLERY",
+  "AUDIO",
+  "DOCUMENT",
+  "FONT",
+  "VIDEO",
+]);
 export const reportStatusEnum = pgEnum("report_status", ["OPEN", "REVIEWING", "RESOLVED", "DISMISSED"]);
 
 export const LINK_ICONS = [
@@ -292,6 +300,38 @@ export const themes = pgTable(
   (t) => [index("themes_active_sort_idx").on(t.isActive, t.sortOrder)],
 );
 
+/** User-saved reusable theme token presets (V2). Validated ThemeTokens only — never raw CSS. */
+export const savedThemes = pgTable(
+  "saved_themes",
+  {
+    id: id(),
+    userId: text("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    name: varchar("name", { length: 60 }).notNull(),
+    tokens: jsonb("tokens").notNull().default({}),
+    createdAt: createdAt(),
+  },
+  (t) => [index("saved_themes_user_created_idx").on(t.userId, t.createdAt)],
+);
+
+/**
+ * Isolated Pro custom CSS storage (V2.5, guardrails #3 & #4).
+ *
+ * Kept deliberately outside `profiles.draft_config` so the standard profile
+ * token schema never accepts raw CSS. Compiled, validated and scoped on write,
+ * published only inside `publishProfile()`, and rendered strictly on the
+ * separate `PRO_CSS_SANDBOX_ORIGIN` inside a sandboxed iframe.
+ */
+export const profileCustomCss = pgTable("profile_custom_css", {
+  profileId: text("profile_id")
+    .primaryKey()
+    .references(() => profiles.id, { onDelete: "cascade" }),
+  draftCss: text("draft_css").notNull().default(""),
+  publishedCss: text("published_css"),
+  updatedAt: updatedAt(),
+});
+
 // ---------------------------------------------------------------------------
 // Operations
 // ---------------------------------------------------------------------------
@@ -336,6 +376,7 @@ export const usersRelations = relations(users, ({ many, one }) => ({
   sessions: many(sessions),
   accounts: many(accounts),
   media: many(mediaAssets),
+  savedThemes: many(savedThemes),
   profile: one(profiles, { fields: [users.id], references: [profiles.userId] }),
 }));
 
@@ -343,6 +384,15 @@ export const profilesRelations = relations(profiles, ({ one, many }) => ({
   user: one(users, { fields: [profiles.userId], references: [users.id] }),
   links: many(profileLinks),
   versions: many(profileVersions),
+  customCss: one(profileCustomCss, { fields: [profiles.id], references: [profileCustomCss.profileId] }),
+}));
+
+export const savedThemesRelations = relations(savedThemes, ({ one }) => ({
+  user: one(users, { fields: [savedThemes.userId], references: [users.id] }),
+}));
+
+export const profileCustomCssRelations = relations(profileCustomCss, ({ one }) => ({
+  profile: one(profiles, { fields: [profileCustomCss.profileId], references: [profiles.id] }),
 }));
 
 export const profileLinksRelations = relations(profileLinks, ({ one }) => ({
@@ -369,4 +419,6 @@ export type NewProfileLink = typeof profileLinks.$inferInsert;
 export type ProfileVersion = typeof profileVersions.$inferSelect;
 export type MediaAsset = typeof mediaAssets.$inferSelect;
 export type Theme = typeof themes.$inferSelect;
+export type SavedTheme = typeof savedThemes.$inferSelect;
+export type ProfileCustomCss = typeof profileCustomCss.$inferSelect;
 export type Session = typeof sessions.$inferSelect;

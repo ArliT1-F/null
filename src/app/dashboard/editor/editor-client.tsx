@@ -1,1251 +1,1167 @@
 "use client";
 
-import {
-  ChevronDown,
-  ChevronUp,
-  Eye,
-  EyeOff,
-  ExternalLink,
-  GripVertical,
-  LayoutTemplate,
-  Link2,
-  Monitor,
-  Palette,
-  Pencil,
-  Plus,
-  Redo2,
-  RotateCcw,
-  Save,
-  Smartphone,
-  Sparkles,
-  Trash2,
-  Undo2,
-  Upload,
-} from "lucide-react";
-import { useCallback, useEffect, useMemo, useRef, useState, useTransition } from "react";
-import { Button, Icon, Input, Spinner } from "@/components/ui";
-import { ProfileView, type RenderLink } from "@/components/profile/profile-renderer";
-import { normalizeProfileConfig, type ProfileConfig } from "@/lib/profile-config";
-import { backgroundImageFor, safeBackgroundUrl } from "@/lib/background-image";
+import Link from "next/link";
+import { useMemo, useState, useTransition } from "react";
+import { ICON_CHOICES, linkIcon } from "@/components/profile/icons";
+import { Icon } from "@/components/ui";
+import type { ProfileLink, SavedTheme } from "@/db/schema";
+import type { ThemeCard } from "@/lib/themes";
+import { materializeCanvasFrames } from "@/lib/canvas-guides";
+import type { Entitlements } from "@/lib/entitlements";
+import type { ProfileConfig } from "@/lib/profile-config";
 import { cn } from "@/lib/utils";
 import {
-  ColorControl,
-  ControlGroup,
-  RangeControl,
-  SegmentedControl,
-  TextControl,
-  ToggleControl,
-} from "./controls";
-import { BlocksPanel } from "./blocks-panel";
-import { useEditorStore } from "./editor-store";
-import {
-  addLink,
-  applyAvatar,
-  applyTheme,
-  editLink,
-  listVersionsAction,
-  moveLink,
+  applySavedThemeAction,
+  applyThemeAction,
+  createLinkAction,
+  deleteLinkAction,
+  deleteSavedThemeAction,
   publishAction,
-  removeLink,
+  reorderLinksAction,
   restoreVersionAction,
-  saveDraftConfig,
-  saveIdentity,
-  type ActionResult,
+  saveCustomCssAction,
+  saveCustomThemeAction,
+  saveDraftAction,
+  saveIdentityAction,
+  updateLinkAction,
+  versionDiffAction,
 } from "./actions";
+import { BlockInspector } from "./block-inspector";
+import { BlocksPanel } from "./blocks-panel";
+import { SegmentedControl } from "./controls";
+import { CssPanel } from "./css-panel";
+import { DesignPanel } from "./design-panel";
+import { useEditorStore } from "./editor-store";
+import { HistoryPanel, type VersionItem } from "./history-panel";
+import { InteractiveCanvas, type DeviceMode } from "./interactive-canvas";
+import { uploadMediaFile } from "./upload-client";
 
-type LinkRow = { id: string; label: string; url: string; icon: string; highlight: boolean; visible: boolean };
-
-type ThemeOption = { slug: string; name: string; category: string; tokens: Record<string, unknown> };
-
-type VersionRow = { id: string; version: number; createdAt: string; changes: import("@/lib/profile-diff").RevisionChange[] };
-
-export type EditorProps = {
-  username: string;
-  usernameDisplay: string;
-  identity: {
-    displayName: string;
-    bio: string;
-    headline: string;
-    location: string;
-    statusText: string;
+type EditorProps = {
+  user: {
+    id: string;
+    username: string;
+    usernameDisplay: string;
+    displayName: string | null;
     avatarUrl: string | null;
-    visibility: "PUBLIC" | "UNLISTED" | "PRIVATE";
   };
-  initialConfig: ProfileConfig;
-  initialLinks: LinkRow[];
-  themes: ThemeOption[];
-  activeThemeSlug: string;
-  versions: VersionRow[];
-  publishedAt: string | null;
-  revision: number;
-  draftDirty: boolean;
+  profile: {
+    bio: string | null;
+    headline: string | null;
+    location: string | null;
+    statusText: string | null;
+    visibility: "PUBLIC" | "UNLISTED" | "PRIVATE";
+    themeSlug: string;
+    publishedAt: string | null;
+    draftDirty: boolean;
+  };
+  initialDraft: ProfileConfig;
+  initialLinks: ProfileLink[];
+  initialCustomCss: { draft: string; published: string | null };
+  entitlements: Entitlements;
+  initialSavedThemes: SavedTheme[];
+  themes: ThemeCard[];
+  versions: VersionItem[];
 };
 
-type Panel = "blocks" | "design" | "identity" | "links" | "publish";
+type LeftTab = "blocks" | "design" | "profile" | "links" | "css" | "history";
 
-export function EditorClient(props: EditorProps) {
-  const store = useEditorStore(props.initialConfig);
-  const [panel, setPanel] = useState<Panel>("design");
-  const [device, setDevice] = useState<"desktop" | "mobile">("desktop");
-  const [saving, setSaving] = useState(false);
-  const [savedAt, setSavedAt] = useState<Date | null>(null);
-  const [toast, setToast] = useState<{ tone: "ok" | "error"; message: string } | null>(null);
-  const [identity, setIdentity] = useState(props.identity);
-  const [links, setLinks] = useState<LinkRow[]>(props.initialLinks);
-  const [versions, setVersions] = useState<VersionRow[]>(props.versions);
-  const [publishedAt, setPublishedAt] = useState<string | null>(props.publishedAt);
-  const [revision, setRevision] = useState(props.revision);
-  const [publishing, startPublishing] = useTransition();
-  const [draftDirty, setDraftDirty] = useState(props.draftDirty);
-  const [activeThemeSlug, setActiveThemeSlug] = useState(props.activeThemeSlug);
+const LEFT_TABS: readonly { id: LeftTab; label: string }[] = [
+  { id: "blocks", label: "Layers" },
+  { id: "design", label: "Design" },
+  { id: "profile", label: "Profile" },
+  { id: "links", label: "Links" },
+  { id: "css", label: "CSS" },
+  { id: "history", label: "History" },
+];
 
-  /** Re-reads real version rows so history buttons never point at phantom ids. */
-  const refreshVersions = useCallback(async () => {
-    const result = await listVersionsAction();
-    if (result.ok && result.data) setVersions(result.data.versions);
-  }, []);
+export function EditorClient({
+  user,
+  profile,
+  initialDraft,
+  initialLinks,
+  initialCustomCss,
+  entitlements,
+  initialSavedThemes,
+  themes,
+  versions: initialVersions,
+}: EditorProps) {
+  const [tab, setTab] = useState<LeftTab>("blocks");
+  const [device, setDevice] = useState<DeviceMode>("desktop");
+  const [inspectorOpen, setInspectorOpen] = useState(true);
+  const [sandboxPreview, setSandboxPreview] = useState(false);
 
-  const showToast = useCallback((tone: "ok" | "error", message: string) => {
-    setToast({ tone, message });
-    window.setTimeout(() => setToast(null), 4000);
-  }, []);
+  const store = useEditorStore(initialDraft);
+  const { draft } = store;
 
-  // --- Autosave -----------------------------------------------------------
-  // Debounced so dragging a slider does not produce a request per pixel, and
-  // skipped when nothing changed since the last successful save.
-  const saveTimer = useRef<number | null>(null);
-  const latestDraft = useRef(store.draft);
-  latestDraft.current = store.draft;
+  const [themeSlug, setThemeSlug] = useState<string | null>(profile.themeSlug);
+  const [savedThemes, setSavedThemes] = useState<SavedTheme[]>(initialSavedThemes);
+  const [published, setPublished] = useState<boolean>(Boolean(profile.publishedAt));
+  const [unpublishedDraft, setUnpublishedDraft] = useState<boolean>(profile.draftDirty);
+  const [versions, setVersions] = useState<VersionItem[]>(initialVersions);
 
-  const persist = useCallback(async () => {
-    setSaving(true);
-    const result = await saveDraftConfig(latestDraft.current);
-    setSaving(false);
-    if (result.ok) {
-      setSavedAt(new Date());
-      store.markSaved(latestDraft.current);
-      setDraftDirty(true);
-    } else {
-      showToast("error", result.error);
-    }
-  }, [showToast, store]);
+  // Identity & visibility state
+  const [identity, setIdentity] = useState({
+    displayName: user.displayName ?? "",
+    headline: profile.headline ?? "",
+    bio: profile.bio ?? "",
+    location: profile.location ?? "",
+    statusText: profile.statusText ?? "",
+    avatarUrl: user.avatarUrl,
+    visibility: profile.visibility,
+  });
+  const [identityDirty, setIdentityDirty] = useState(false);
 
-  useEffect(() => {
-    if (!store.dirty) return;
-    if (saveTimer.current) window.clearTimeout(saveTimer.current);
-    saveTimer.current = window.setTimeout(() => void persist(), 900);
-    return () => {
-      if (saveTimer.current) window.clearTimeout(saveTimer.current);
-    };
-  }, [store.draft, store.dirty, persist]);
+  // Links state
+  const [links, setLinks] = useState<ProfileLink[]>(initialLinks);
 
-  // --- Keyboard shortcuts -------------------------------------------------
-  useEffect(() => {
-    function onKeyDown(event: KeyboardEvent) {
-      const target = event.target as HTMLElement | null;
-      const typing = target && (target.tagName === "INPUT" || target.tagName === "TEXTAREA" || target.isContentEditable);
-      if (!(event.metaKey || event.ctrlKey)) return;
+  // Custom CSS state (strictly separate from ProfileConfig — guardrail #3)
+  const [customCss, setCustomCss] = useState<string>(initialCustomCss.draft);
+  const [savedCustomCss, setSavedCustomCss] = useState<string>(initialCustomCss.draft);
+  const cssDirty = customCss !== savedCustomCss;
 
-      if (event.key.toLowerCase() === "z" && !event.shiftKey) {
-        event.preventDefault();
-        store.undo();
-      } else if ((event.key.toLowerCase() === "z" && event.shiftKey) || event.key.toLowerCase() === "y") {
-        event.preventDefault();
-        store.redo();
-      } else if (event.key.toLowerCase() === "s") {
-        event.preventDefault();
-        if (!typing) void persist();
+  // Publish note dropdown
+  const [publishNote, setPublishNote] = useState("");
+  const [showPublishNote, setShowPublishNote] = useState(false);
+
+  // Feedback
+  const [toast, setToast] = useState<{ kind: "info" | "error"; text: string } | null>(null);
+  const [pending, startTransition] = useTransition();
+  const [uploadingAvatar, setUploadingAvatar] = useState(false);
+
+  function notify(text: string, kind: "info" | "error" = "info") {
+    setToast({ kind, text });
+  }
+
+  const anyUnsaved = store.dirty || identityDirty || cssDirty;
+
+  async function flushPendingDrafts(): Promise<boolean> {
+    if (identityDirty) {
+      const res = await saveIdentityAction({
+        displayName: identity.displayName || null,
+        headline: identity.headline || null,
+        bio: identity.bio || null,
+        location: identity.location || null,
+        statusText: identity.statusText || null,
+        visibility: identity.visibility,
+        avatarUrl: identity.avatarUrl,
+      });
+      if (!res.ok) {
+        notify(res.error, "error");
+        return false;
       }
+      setIdentityDirty(false);
     }
-    window.addEventListener("keydown", onKeyDown);
-    return () => window.removeEventListener("keydown", onKeyDown);
-  }, [store, persist]);
+    if (store.dirty) {
+      const res = await saveDraftAction(draft);
+      if (!res.ok) {
+        notify(res.error, "error");
+        return false;
+      }
+      store.markSaved();
+    }
+    if (cssDirty && entitlements.canEditCustomCss) {
+      const res = await saveCustomCssAction(customCss);
+      if (!res.ok) {
+        notify(res.error, "error");
+        return false;
+      }
+      setSavedCustomCss(res.draftCss);
+    }
+    setUnpublishedDraft(true);
+    return true;
+  }
 
-  // --- Preview props ------------------------------------------------------
-  const visibleLinks: RenderLink[] = useMemo(
-    () =>
-      links
-        .filter((l) => l.visible)
-        .map((l) => ({ id: l.id, label: l.label, url: l.url, icon: l.icon, highlight: l.highlight })),
-    [links],
+  function saveAll() {
+    startTransition(async () => {
+      const ok = await flushPendingDrafts();
+      if (ok) notify("Draft saved.");
+    });
+  }
+
+  function handleSaveCss() {
+    startTransition(async () => {
+      const res = await saveCustomCssAction(customCss);
+      if (!res.ok) {
+        notify(res.error, "error");
+        return;
+      }
+      setSavedCustomCss(res.draftCss);
+      setUnpublishedDraft(true);
+      notify("Custom CSS draft saved.");
+    });
+  }
+
+  function handlePublish(label?: string) {
+    startTransition(async () => {
+      const saved = await flushPendingDrafts();
+      if (!saved) return;
+
+      const res = await publishAction(label);
+      if (!res.ok) {
+        notify(res.error, "error");
+        return;
+      }
+      setPublished(true);
+      setUnpublishedDraft(false);
+      setVersions(res.versions);
+      setPublishNote("");
+      setShowPublishNote(false);
+      notify(`Published v${res.version} — live at /${res.username}`);
+    });
+  }
+
+  function handleApplyTheme(slug: string) {
+    startTransition(async () => {
+      if (store.dirty) {
+        const saved = await saveDraftAction(draft);
+        if (!saved.ok) {
+          notify(saved.error, "error");
+          return;
+        }
+      }
+      const res = await applyThemeAction(slug);
+      if (!res.ok) {
+        notify(res.error, "error");
+        return;
+      }
+      store.replace(res.config, `Apply theme "${slug}"`);
+      setThemeSlug(slug);
+      setUnpublishedDraft(true);
+      notify("Theme applied — blocks & layout preserved.");
+    });
+  }
+
+  async function handleSaveCustomTheme(name: string): Promise<boolean> {
+    const res = await saveCustomThemeAction(name, draft.theme);
+    if (!res.ok) {
+      notify(res.error, "error");
+      return false;
+    }
+    setSavedThemes((prev) => [res.savedTheme, ...prev]);
+    notify(`Saved theme "${res.savedTheme.name}".`);
+    return true;
+  }
+
+  function handleApplySavedTheme(id: string) {
+    startTransition(async () => {
+      if (store.dirty) await saveDraftAction(draft);
+      const res = await applySavedThemeAction(id);
+      if (!res.ok) {
+        notify(res.error, "error");
+        return;
+      }
+      store.replace(res.config, "Apply saved theme");
+      setThemeSlug(null);
+      setUnpublishedDraft(true);
+      notify("Saved theme applied.");
+    });
+  }
+
+  function handleDeleteSavedTheme(id: string) {
+    startTransition(async () => {
+      const res = await deleteSavedThemeAction(id);
+      if (!res.ok) {
+        notify(res.error, "error");
+        return;
+      }
+      setSavedThemes((prev) => prev.filter((t) => t.id !== id));
+      notify("Saved theme deleted.");
+    });
+  }
+
+  function handleRestoreVersion(versionId: string) {
+    startTransition(async () => {
+      const res = await restoreVersionAction(versionId);
+      if (!res.ok) {
+        notify(res.error, "error");
+        return;
+      }
+      const { restored } = res;
+      store.replace(restored.draft, `Restored to v${restored.version}`);
+      setThemeSlug(restored.themeSlug);
+      setIdentity(restored.identity);
+      setIdentityDirty(false);
+      setLinks(restored.links);
+      setCustomCss(restored.customCss.draft);
+      setSavedCustomCss(restored.customCss.draft);
+      setVersions(restored.versions);
+      setPublished(true);
+      setUnpublishedDraft(false);
+      store.setSelection(null);
+      notify(`Restored as v${restored.version}.`);
+    });
+  }
+
+  async function handleAvatarUpload(file: File) {
+    setUploadingAvatar(true);
+    const res = await uploadMediaFile(file, "AVATAR");
+    setUploadingAvatar(false);
+    if (!res.ok) {
+      notify(res.error, "error");
+      return;
+    }
+    setIdentity((i) => ({ ...i, avatarUrl: res.media.url }));
+    setIdentityDirty(true);
+    notify("Avatar uploaded — click Save to keep it.");
+  }
+
+  function switchLayoutMode(mode: "stack" | "canvas") {
+    if (mode === draft.layout.mode) return;
+    store.update((d) => {
+      if (mode === "canvas") {
+        const m = materializeCanvasFrames(d.blocks, d.canvas.height);
+        return {
+          ...d,
+          layout: { ...d.layout, mode: "canvas" },
+          blocks: m.blocks,
+          canvas: { ...d.canvas, height: m.height },
+        };
+      }
+      return { ...d, layout: { ...d.layout, mode: "stack" } };
+    }, `Switch to ${mode} layout`);
+  }
+
+  const previewProfile = useMemo(
+    () => ({
+      username: user.username,
+      usernameDisplay: user.usernameDisplay,
+      displayName: identity.displayName || user.usernameDisplay,
+      avatarUrl: identity.avatarUrl,
+      headline: identity.headline || null,
+      bio: identity.bio || null,
+      location: identity.location || null,
+      statusText: identity.statusText || null,
+      config: draft,
+      links,
+    }),
+    [user, identity, draft, links],
   );
-
-  const backgroundUrl = backgroundImageFor(store.draft.theme.background);
-
-  const preview = (
-    <div
-      className={cn(
-        "relative overflow-hidden rounded-2xl border border-ink-200/70 bg-white transition-all duration-300 dark:border-white/10",
-        device === "mobile" ? "mx-auto w-[390px] max-w-full" : "w-full",
-      )}
-    >
-      <div className="relative min-h-[520px] overflow-y-auto">
-        <div className="relative">
-          {/*
-            The background image layer is rendered *inside* `.null-profile` by
-            the profile stylesheet below (`buildLiveCss`), i.e. by the same code
-            path as the public page. An earlier version drew it as a sibling of
-            the profile, which painted it underneath `.null-profile`'s opaque
-            `--p-bg` fill and made every image invisible.
-          */}
-          <ProfileView
-            profile={{
-              username: props.username,
-              usernameDisplay: props.usernameDisplay,
-              displayName: identity.displayName || props.usernameDisplay,
-              bio: identity.bio || null,
-              avatarUrl: identity.avatarUrl,
-              headline: identity.headline || null,
-              location: identity.location || null,
-              statusText: identity.statusText || null,
-              links: visibleLinks,
-              blocks: store.draft.blocks,
-              showLocation: store.draft.layout.showLocation,
-              showStatus: store.draft.layout.showStatus,
-              showAvatar: store.draft.layout.showAvatar,
-              entrance: "none",
-              appName: "null",
-            }}
-            backgroundUrl={backgroundUrl}
-          />
-        </div>
-      </div>
-    </div>
-  );
-
-  const css = useMemo(() => buildLiveCss(store.draft), [store.draft]);
 
   return (
-    <div className="min-h-dvh">
-      <style dangerouslySetInnerHTML={{ __html: css }} />
+    <div className="space-y-4">
+      {/* Top workspace toolbar */}
+      <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-ink-200/80 bg-white px-4 py-3 dark:border-white/[0.08] dark:bg-ink-900">
+        <div className="flex flex-wrap items-center gap-2.5">
+          <span
+            className={cn(
+              "inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-medium",
+              published && identity.visibility !== "PRIVATE"
+                ? "bg-emerald-500/15 text-emerald-700 dark:text-emerald-300"
+                : "bg-ink-100 text-ink-600 dark:bg-white/[0.06] dark:text-ink-300",
+            )}
+          >
+            <span
+              className={cn(
+                "size-1.5 rounded-full",
+                published && identity.visibility !== "PRIVATE" ? "bg-emerald-500" : "bg-ink-400",
+              )}
+            />
+            {identity.visibility === "PRIVATE"
+              ? "Private"
+              : published
+                ? identity.visibility === "UNLISTED"
+                  ? "Unlisted · Live"
+                  : "Published"
+                : "Draft"}
+          </span>
 
-      {/* Top bar --------------------------------------------------------- */}
-      <div className="sticky top-16 z-30 -mx-4 mb-5 border-b border-ink-200/70 bg-white/90 px-4 py-3 backdrop-blur-xl sm:-mx-6 sm:px-6 dark:border-white/10 dark:bg-ink-950/90">
-        <div className="flex flex-wrap items-center justify-between gap-3">
-          <div className="flex items-center gap-2">
-            <span className="text-sm font-semibold">Editor</span>
-            <span className="hidden text-xs text-ink-400 sm:inline">
-              {saving ? "saving…" : savedAt ? `saved ${savedAt.toLocaleTimeString("en", { hour: "2-digit", minute: "2-digit" })}` : store.dirty ? "unsaved changes" : "up to date"}
+          {anyUnsaved ? (
+            <span className="text-xs font-medium text-amber-600 dark:text-amber-400">
+              Unsaved edits
             </span>
-          </div>
+          ) : unpublishedDraft && published ? (
+            <span className="text-xs text-ink-400">Draft ahead of live</span>
+          ) : null}
 
-          <div className="flex items-center gap-1.5">
-            <Button variant="quiet" size="sm" onClick={store.undo} disabled={!store.canUndo} title="Undo (Ctrl+Z)" aria-label="Undo">
-              <Icon icon={Undo2} className="size-4" />
-            </Button>
-            <Button variant="quiet" size="sm" onClick={store.redo} disabled={!store.canRedo} title="Redo (Ctrl+Shift+Z)" aria-label="Redo">
-              <Icon icon={Redo2} className="size-4" />
-            </Button>
-            <span className="mx-1 h-5 w-px bg-ink-200 dark:bg-white/10" />
-            <Button variant="ghost" size="sm" onClick={() => void persist()} disabled={saving}>
-              {saving ? <Spinner className="size-3.5" /> : <Icon icon={Save} className="size-3.5" />}
-              Save
-            </Button>
-            <Button
-              variant="accent"
-              size="sm"
-              disabled={publishing}
-              onClick={() =>
-                startPublishing(async () => {
-                  const result = await publishAction();
-                  if (result.ok) {
-                    setRevision(result.data!.version);
-                    setPublishedAt(new Date().toISOString());
-                    setDraftDirty(false);
-                    await refreshVersions();
-                    showToast("ok", `Published version ${result.data!.version}`);
-                  } else {
-                    showToast("error", result.error);
-                  }
-                })
-              }
+          {toast && (
+            <span
+              role="status"
+              className={cn(
+                "text-xs",
+                toast.kind === "error"
+                  ? "font-medium text-red-600 dark:text-red-400"
+                  : "text-ink-500 dark:text-ink-400",
+              )}
             >
-              {publishing ? <Spinner className="size-3.5" /> : <Icon icon={Sparkles} className="size-3.5" />}
-              Publish
-            </Button>
-            <a
-              href={`/${props.username}`}
+              {toast.text}
+            </span>
+          )}
+        </div>
+
+        <div className="flex flex-wrap items-center gap-1.5">
+          <button
+            type="button"
+            onClick={store.undo}
+            disabled={!store.canUndo}
+            title="Undo (⌘Z)"
+            aria-label="Undo"
+            className="btn-ghost px-2.5 py-1.5 text-xs disabled:opacity-30"
+          >
+            ↶
+          </button>
+          <button
+            type="button"
+            onClick={store.redo}
+            disabled={!store.canRedo}
+            title="Redo (⇧⌘Z)"
+            aria-label="Redo"
+            className="btn-ghost px-2.5 py-1.5 text-xs disabled:opacity-30"
+          >
+            ↷
+          </button>
+
+          {published && identity.visibility !== "PRIVATE" && (
+            <Link
+              href={`/${user.usernameDisplay}`}
               target="_blank"
-              rel="noopener"
-              className="btn-quiet hidden sm:inline-flex"
-              title="Open the published profile"
+              className="btn-ghost px-3 py-1.5 text-xs"
             >
-              <Icon icon={ExternalLink} className="size-4" />
-            </a>
+              /{user.usernameDisplay} ↗
+            </Link>
+          )}
+
+          <button
+            type="button"
+            onClick={saveAll}
+            disabled={pending || !anyUnsaved}
+            className="btn-secondary px-3 py-1.5 text-xs"
+          >
+            Save
+          </button>
+
+          <div className="relative flex items-center">
+            <button
+              type="button"
+              onClick={() => handlePublish(publishNote || undefined)}
+              disabled={pending}
+              className="btn-primary rounded-r-none px-3.5 py-1.5 text-xs"
+            >
+              {pending ? "Working…" : published ? "Publish update" : "Publish"}
+            </button>
+            <button
+              type="button"
+              disabled={pending}
+              onClick={() => setShowPublishNote((s) => !s)}
+              aria-label="Add revision note"
+              title="Publish with revision note"
+              className="btn-primary rounded-l-none border-l border-black/15 px-2 py-1.5 text-xs"
+            >
+              ▾
+            </button>
+            {showPublishNote && (
+              <form
+                onSubmit={(e) => {
+                  e.preventDefault();
+                  handlePublish(publishNote);
+                }}
+                className="absolute right-0 top-10 z-30 w-64 space-y-2 rounded-xl border border-ink-200 bg-white p-3 shadow-elevated dark:border-white/15 dark:bg-ink-900"
+              >
+                <label className="block text-[11px] font-medium text-ink-600 dark:text-ink-300">
+                  Revision note (optional)
+                  <input
+                    type="text"
+                    maxLength={80}
+                    value={publishNote}
+                    onChange={(e) => setPublishNote(e.target.value)}
+                    placeholder="e.g. New portfolio layout"
+                    className="mt-1 w-full rounded-lg border border-ink-200 bg-white px-2.5 py-1.5 text-xs dark:border-white/10 dark:bg-black/30"
+                  />
+                </label>
+                <button type="submit" disabled={pending} className="btn-primary w-full text-xs">
+                  Snapshot &amp; publish
+                </button>
+              </form>
+            )}
           </div>
         </div>
       </div>
 
-      <div className="grid gap-6 lg:grid-cols-[320px_minmax(0,1fr)] xl:grid-cols-[340px_minmax(0,1fr)_300px]">
-        {/* Left: inspector ---------------------------------------------- */}
-        <div className="order-2 lg:order-1">
-          <div className="overflow-hidden rounded-2xl border border-ink-200/70 bg-white dark:border-white/10 dark:bg-white/[0.02]">
-            <div className="grid grid-cols-5 border-b border-ink-200/70 dark:border-white/10" role="tablist">
-              {(
-                [
-                  { key: "blocks", label: "Blocks", icon: LayoutTemplate },
-                  { key: "design", label: "Design", icon: Palette },
-                  { key: "identity", label: "Identity", icon: Pencil },
-                  { key: "links", label: "Links", icon: Link2 },
-                  { key: "publish", label: "Publish", icon: LayoutTemplate },
-                ] as const
-              ).map(({ key, label, icon: TabIcon }) => (
+      {/* Three-panel workspace: Left Controls | Center Visual Canvas | Right Properties Inspector */}
+      <div
+        className={cn(
+          "grid items-start gap-4",
+          inspectorOpen
+            ? "lg:grid-cols-[310px_minmax(0,1fr)] xl:grid-cols-[300px_minmax(0,1fr)_280px]"
+            : "lg:grid-cols-[320px_minmax(0,1fr)]",
+        )}
+      >
+        {/* LEFT PANEL */}
+        <aside className="overflow-hidden rounded-2xl border border-ink-200/80 bg-white dark:border-white/[0.08] dark:bg-ink-900">
+          <nav
+            className="grid grid-cols-6 border-b border-ink-200/80 text-[11px] font-medium dark:border-white/[0.08]"
+            aria-label="Editor sections"
+          >
+            {LEFT_TABS.map((t) => (
+              <button
+                key={t.id}
+                type="button"
+                onClick={() => {
+                  setTab(t.id);
+                  if (t.id === "css" && customCss.trim()) setSandboxPreview(true);
+                }}
+                className={cn(
+                  "border-b-2 px-1 py-2.5 text-center transition-colors",
+                  tab === t.id
+                    ? "border-brand-500 text-ink-950 dark:text-white"
+                    : "border-transparent text-ink-400 hover:text-ink-800 dark:hover:text-ink-200",
+                )}
+              >
+                {t.label}
+              </button>
+            ))}
+          </nav>
+
+          <div className="max-h-[calc(100dvh-12rem)] overflow-y-auto">
+            {tab === "blocks" && (
+              <BlocksPanel
+                draft={draft}
+                selection={store.selection}
+                onSelect={store.setSelection}
+                onUpdate={store.update}
+                onAddBlock={store.addBlock}
+                onDuplicateBlock={store.duplicateBlock}
+                onCopyBlock={(id) => {
+                  const ok = store.copyBlock(id);
+                  if (ok) notify("Copied block.");
+                  return ok;
+                }}
+                onPasteBlock={store.pasteBlock}
+                onCreateGroup={store.createGroup}
+                hasClipboard={store.clipboard !== null}
+                onOpenInspector={() => setInspectorOpen(true)}
+              />
+            )}
+
+            {tab === "design" && (
+              <DesignPanel
+                draft={draft}
+                themes={themes}
+                savedThemes={savedThemes}
+                themeSlug={themeSlug}
+                device={device}
+                onDeviceChange={setDevice}
+                onUpdate={store.update}
+                onApplyTheme={handleApplyTheme}
+                onSaveCustomTheme={handleSaveCustomTheme}
+                onApplySavedTheme={handleApplySavedTheme}
+                onDeleteSavedTheme={handleDeleteSavedTheme}
+                onNotify={(msg) => notify(msg)}
+              />
+            )}
+
+            {tab === "profile" && (
+              <ProfilePanel
+                identity={identity}
+                uploading={uploadingAvatar}
+                onChange={(patch) => {
+                  setIdentity((i) => ({ ...i, ...patch }));
+                  setIdentityDirty(true);
+                }}
+                onAvatarUpload={handleAvatarUpload}
+              />
+            )}
+
+            {tab === "links" && (
+              <LinksPanel
+                links={links}
+                onChange={(next) => {
+                  setLinks(next);
+                  setUnpublishedDraft(true);
+                }}
+                onStatus={(msg, isErr) => notify(msg, isErr ? "error" : "info")}
+              />
+            )}
+
+            {tab === "css" && (
+              <CssPanel
+                value={customCss}
+                dirty={cssDirty}
+                saving={pending}
+                entitlements={entitlements}
+                sandboxPreview={sandboxPreview}
+                onToggleSandboxPreview={setSandboxPreview}
+                onChange={setCustomCss}
+                onSave={handleSaveCss}
+              />
+            )}
+
+            {tab === "history" && (
+              <HistoryPanel
+                history={store.history}
+                historyIndex={store.historyIndex}
+                canUndo={store.canUndo}
+                canRedo={store.canRedo}
+                onUndo={store.undo}
+                onRedo={store.redo}
+                onJumpToHistory={store.jumpToHistory}
+                onCreateCheckpoint={(name) => {
+                  const ok = store.createCheckpoint(name);
+                  if (ok) notify(`Checkpoint "${name.trim()}" pinned.`);
+                  return ok;
+                }}
+                onRemoveCheckpoint={store.removeCheckpoint}
+                versions={versions}
+                pending={pending}
+                onRestoreVersion={handleRestoreVersion}
+                onLoadDiff={async (versionId, baselineId) => {
+                  const res = await versionDiffAction(versionId, baselineId);
+                  if (!res.ok) {
+                    notify(res.error, "error");
+                    return null;
+                  }
+                  return { previousVersion: res.previousVersion, changes: res.changes };
+                }}
+              />
+            )}
+          </div>
+        </aside>
+
+        {/* CENTER PANEL: Live Visual Canvas */}
+        <section aria-label="Visual canvas and preview" className="min-w-0 space-y-2.5">
+          <div className="flex flex-wrap items-center justify-between gap-2 text-xs">
+            <div className="inline-flex items-center gap-1 rounded-lg border border-ink-200 bg-white p-0.5 dark:border-white/10 dark:bg-ink-900">
+              {(["stack", "canvas"] as const).map((m) => (
                 <button
-                  key={key}
-                  role="tab"
-                  aria-selected={panel === key}
-                  onClick={() => setPanel(key)}
+                  key={m}
+                  type="button"
+                  onClick={() => {
+                    setSandboxPreview(false);
+                    switchLayoutMode(m);
+                  }}
+                  aria-pressed={!sandboxPreview && draft.layout.mode === m}
                   className={cn(
-                    "flex flex-col items-center gap-1 py-2.5 text-[10px] font-medium transition-colors",
-                    panel === key
-                      ? "border-b-2 border-brand-500 text-brand-600 dark:text-brand-300"
-                      : "text-ink-400 hover:text-ink-700 dark:hover:text-ink-200",
+                    "rounded-md px-2.5 py-1 text-[11px] font-medium capitalize transition-colors",
+                    !sandboxPreview && draft.layout.mode === m
+                      ? "bg-ink-900 text-white dark:bg-white dark:text-ink-950"
+                      : "text-ink-500 hover:text-ink-800 dark:text-ink-400 dark:hover:text-white",
                   )}
                 >
-                  <Icon icon={TabIcon} className="size-4" />
-                  {label}
+                  {m}
                 </button>
               ))}
-            </div>
-
-            <div className="max-h-[calc(100dvh-14rem)] overflow-y-auto">
-              {panel === "blocks" && <BlocksPanel store={store} />}
-              {panel === "design" && (
-                <DesignPanel
-                  store={store}
-                  themes={props.themes}
-                  activeThemeSlug={activeThemeSlug}
-                  onThemeChanged={setActiveThemeSlug}
-                  onToast={showToast}
-                />
-              )}
-              {panel === "identity" && (
-                <IdentityPanel
-                  identity={identity}
-                  setIdentity={setIdentity}
-                  onSaved={(next) => {
-                    setIdentity(next);
-                    showToast("ok", "Profile details saved");
-                  }}
-                  onError={(error) => showToast("error", error)}
-                />
-              )}
-              {panel === "links" && (
-                <LinksPanel links={links} setLinks={setLinks} onToast={showToast} />
-              )}
-              {panel === "publish" && (
-                <PublishPanel
-                  draftDirty={draftDirty}
-                  publishedAt={publishedAt}
-                  revision={revision}
-                  versions={versions}
-                  onRestore={async (id) => {
-                    const result = await restoreVersionAction(id);
-                    if (result.ok) {
-                      setRevision(result.data!.version);
-                      setPublishedAt(new Date().toISOString());
-                      setDraftDirty(false);
-                      await refreshVersions();
-                      showToast("ok", `Restored as version ${result.data!.version}`);
-                    } else {
-                      showToast("error", result.error);
-                    }
-                  }}
-                  onPublish={() =>
-                    startPublishing(async () => {
-                      const result = await publishAction();
-                      if (result.ok) {
-                        setRevision(result.data!.version);
-                        setPublishedAt(new Date().toISOString());
-                        setDraftDirty(false);
-                        await refreshVersions();
-                        showToast("ok", `Published version ${result.data!.version}`);
-                      } else {
-                        showToast("error", result.error);
-                      }
-                    })
-                  }
-                  publishing={publishing}
-                />
+              {entitlements.canEditCustomCss && customCss.trim() && (
+                <button
+                  type="button"
+                  onClick={() => setSandboxPreview((s) => !s)}
+                  aria-pressed={sandboxPreview}
+                  className={cn(
+                    "rounded-md px-2.5 py-1 text-[11px] font-medium transition-colors",
+                    sandboxPreview
+                      ? "bg-brand-500 text-ink-950"
+                      : "text-brand-600 hover:text-brand-700 dark:text-brand-400",
+                  )}
+                >
+                  CSS Sandbox
+                </button>
               )}
             </div>
-          </div>
-        </div>
 
-        {/* Center: live canvas ------------------------------------------ */}
-        <div className="order-1 lg:order-2">
-          <div className="mb-3 flex items-center justify-between">
-            <div className="flex items-center gap-1 rounded-full border border-ink-200 bg-white p-1 dark:border-white/10 dark:bg-white/[0.04]">
+            <div className="flex items-center gap-1.5">
+              <div className="inline-flex rounded-lg border border-ink-200 bg-white p-0.5 dark:border-white/10 dark:bg-ink-900">
+                {(["desktop", "tablet", "mobile"] as const).map((mode) => (
+                  <button
+                    key={mode}
+                    type="button"
+                    onClick={() => setDevice(mode)}
+                    aria-pressed={device === mode}
+                    className={cn(
+                      "rounded-md px-2.5 py-1 text-[11px] capitalize transition-colors",
+                      device === mode
+                        ? "bg-ink-900 text-white dark:bg-white dark:text-ink-950"
+                        : "text-ink-500 hover:text-ink-800 dark:text-ink-400 dark:hover:text-white",
+                    )}
+                  >
+                    {mode}
+                  </button>
+                ))}
+              </div>
+
               <button
-                onClick={() => setDevice("desktop")}
-                aria-pressed={device === "desktop"}
+                type="button"
+                onClick={() => setInspectorOpen((o) => !o)}
+                aria-pressed={inspectorOpen}
                 className={cn(
-                  "flex items-center gap-1.5 rounded-full px-3 py-1 text-[11px] font-medium transition-colors",
-                  device === "desktop" ? "bg-ink-950 text-white dark:bg-brand-400 dark:text-[#04231b]" : "text-ink-500",
+                  "rounded-lg border px-2.5 py-1 text-[11px] font-medium transition-colors",
+                  inspectorOpen
+                    ? "border-brand-500/40 bg-brand-500/10 text-brand-700 dark:text-brand-300"
+                    : "border-ink-200 bg-white text-ink-500 dark:border-white/10 dark:bg-ink-900 dark:text-ink-400",
                 )}
               >
-                <Icon icon={Monitor} className="size-3.5" /> Desktop
-              </button>
-              <button
-                onClick={() => setDevice("mobile")}
-                aria-pressed={device === "mobile"}
-                className={cn(
-                  "flex items-center gap-1.5 rounded-full px-3 py-1 text-[11px] font-medium transition-colors",
-                  device === "mobile" ? "bg-ink-950 text-white dark:bg-brand-400 dark:text-[#04231b]" : "text-ink-500",
-                )}
-              >
-                <Icon icon={Smartphone} className="size-3.5" /> Mobile
+                Inspector
               </button>
             </div>
-            <p className="hidden text-[11px] text-ink-400 sm:block">Live preview — visitors see the last published version</p>
           </div>
-          {preview}
-        </div>
 
-        {/* Right: summary ----------------------------------------------- */}
-        <div className="order-3 hidden xl:block">
-          <div className="space-y-4">
-            <div className="panel p-4">
-              <p className="eyebrow">Public URL</p>
-              <p className="mt-1.5 truncate font-mono text-[13px]">
-                <span className="text-ink-400">/</span>
-                {props.usernameDisplay}
-              </p>
-              <p className="mt-2 text-[11px] text-ink-400">
-                {publishedAt ? `Live · version ${revision}` : "Not published yet"}
-              </p>
-            </div>
+          <InteractiveCanvas
+            profile={previewProfile}
+            device={device}
+            selection={store.selection}
+            onSelect={store.setSelection}
+            onUpdate={store.update}
+            customCss={customCss}
+            sandboxPreview={sandboxPreview}
+            onOpenInspector={() => setInspectorOpen(true)}
+          />
+        </section>
 
-            <div className="panel p-4">
-              <p className="eyebrow">Checklist</p>
-              <ul className="mt-2.5 space-y-2 text-[12px]">
-                <ChecklistItem done={Boolean(identity.avatarUrl)} label="Add an avatar" />
-                <ChecklistItem done={links.length > 0} label="Add at least one link" />
-                <ChecklistItem done={Boolean(identity.bio)} label="Write a short bio" />
-                <ChecklistItem done={Boolean(publishedAt)} label="Publish your profile" />
-                <ChecklistItem done={identity.visibility !== "PRIVATE"} label="Profile is publicly visible" />
-              </ul>
-            </div>
-
-            <div className="panel p-4">
-              <p className="eyebrow">Shortcuts</p>
-              <dl className="mt-2 space-y-1.5 text-[11px] text-ink-500 dark:text-ink-400">
-                <ShortcutRow keys="Ctrl + Z" action="Undo" />
-                <ShortcutRow keys="Ctrl + Shift + Z" action="Redo" />
-                <ShortcutRow keys="Ctrl + S" action="Save draft" />
-              </dl>
-            </div>
-          </div>
-        </div>
+        {/* RIGHT PANEL: Properties Inspector */}
+        {inspectorOpen && (
+          <aside
+            aria-label="Properties inspector"
+            className="max-h-[calc(100dvh-10rem)] overflow-y-auto rounded-2xl border border-ink-200/80 bg-white lg:col-span-2 xl:col-span-1 dark:border-white/[0.08] dark:bg-ink-900"
+          >
+            <BlockInspector
+              draft={draft}
+              selection={store.selection}
+              onSelect={store.setSelection}
+              onUpdate={store.update}
+              onDuplicateBlock={store.duplicateBlock}
+              onCopyBlock={store.copyBlock}
+              onCreateGroup={store.createGroup}
+              onJumpToTab={(t) => setTab(t)}
+              onNotify={(msg) => notify(msg)}
+            />
+          </aside>
+        )}
       </div>
-
-      {/* Toast ---------------------------------------------------------- */}
-      {toast && (
-        <div
-          role="status"
-          className={cn(
-            "fixed bottom-5 left-1/2 z-50 -translate-x-1/2 rounded-full px-4 py-2 text-sm shadow-lg",
-            toast.tone === "ok"
-              ? "bg-ink-950 text-white dark:bg-brand-400 dark:text-[#04231b]"
-              : "bg-red-600 text-white",
-          )}
-        >
-          {toast.message}
-        </div>
-      )}
     </div>
   );
 }
 
 /* -------------------------------------------------------------------------
- * Panels
+ * Profile identity & visibility panel
  * ---------------------------------------------------------------------- */
 
-function DesignPanel({
-  store,
-  themes,
-  activeThemeSlug,
-  onThemeChanged,
-  onToast,
-}: {
-  store: ReturnType<typeof useEditorStore>;
-  themes: ThemeOption[];
-  activeThemeSlug: string;
-  onThemeChanged: (slug: string) => void;
-  onToast: (tone: "ok" | "error", message: string) => void;
-}) {
-  const { draft, set } = store;
-  const { theme, layout } = draft;
-
-  return (
-    <div>
-      <ControlGroup title="Themes">
-        <div className="grid grid-cols-2 gap-1.5">
-          {themes.map((themeOption) => (
-            <button
-              key={themeOption.slug}
-              type="button"
-              onClick={async () => {
-                const result = await applyTheme(themeOption.slug, themeOption.tokens);
-                if (!result.ok) {
-                  onToast("error", result.error);
-                  return;
-                }
-                // A theme is a starting point, not a patch: its full token set
-                // replaces the previous appearance so switching templates gives
-                // the intended result rather than a muddy blend.
-                store.reset(normalizeProfileConfig({ version: 1, theme: themeOption.tokens }));
-                onThemeChanged(themeOption.slug);
-                onToast("ok", `${themeOption.name} applied`);
-              }}
-              className={cn(
-                "rounded-lg border px-2 py-2 text-left text-[11px] transition-colors",
-                activeThemeSlug === themeOption.slug
-                  ? "border-brand-500 bg-brand-50 text-brand-800 dark:bg-brand-400/10 dark:text-brand-200"
-                  : "border-ink-200 hover:border-ink-300 dark:border-white/10 dark:hover:border-white/25",
-              )}
-            >
-              <span className="block truncate font-medium">{themeOption.name}</span>
-              <span className="block truncate text-[10px] opacity-60">{themeOption.category}</span>
-            </button>
-          ))}
-        </div>
-      </ControlGroup>
-
-      <ControlGroup title="Background">
-        <SegmentedControl
-          label="Type"
-          value={theme.background.type}
-          options={[
-            { value: "solid", label: "Solid" },
-            { value: "gradient", label: "Gradient" },
-            { value: "image", label: "Image" },
-          ]}
-          onChange={(value) => set("theme.background.type", value)}
-        />
-        {theme.background.type === "solid" && (
-          <ColorControl label="Colour" value={theme.background.color} onChange={(v) => set("theme.background.color", v, true)} />
-        )}
-        {theme.background.type === "gradient" && (
-          <>
-            <ColorControl label="From" value={theme.background.gradientFrom} onChange={(v) => set("theme.background.gradientFrom", v, true)} />
-            <ColorControl label="To" value={theme.background.gradientTo} onChange={(v) => set("theme.background.gradientTo", v, true)} />
-            <RangeControl
-              label="Angle"
-              value={theme.background.gradientAngle}
-              min={0}
-              max={360}
-              unit="°"
-              onChange={(v) => set("theme.background.gradientAngle", v, true)}
-            />
-          </>
-        )}
-        {theme.background.type === "image" && (
-          <>
-            <BackgroundUpload
-              value={theme.background.imageUrl}
-              onChange={(url) => set("theme.background.imageUrl", url)}
-              onError={(message) => onToast("error", message)}
-            />
-            <TextControl
-              label="Or paste an image URL"
-              value={theme.background.imageUrl ?? ""}
-              onChange={(v) => set("theme.background.imageUrl", v || null)}
-              placeholder="https://…"
-            />
-            {theme.background.imageUrl && !safeBackgroundUrl(theme.background.imageUrl) ? (
-              <p className="text-[11px] text-amber-600 dark:text-amber-400">
-                That URL can&apos;t be used as a background. Use an <code>https://</code> link to an image, or
-                upload a file above.
-              </p>
-            ) : null}
-          </>
-        )}
-        <RangeControl label="Blur" value={theme.background.blur} min={0} max={40} unit="px" onChange={(v) => set("theme.background.blur", v, true)} />
-        <RangeControl label="Dim" value={theme.background.dim} min={0} max={90} unit="%" onChange={(v) => set("theme.background.dim", v, true)} />
-      </ControlGroup>
-
-      <ControlGroup title="Card">
-        <ColorControl label="Surface" value={theme.card.surface} onChange={(v) => set("theme.card.surface", v, true)} />
-        <RangeControl label="Opacity" value={theme.card.opacity} min={0} max={100} unit="%" onChange={(v) => set("theme.card.opacity", v, true)} />
-        <ColorControl label="Border" value={theme.card.borderColor} onChange={(v) => set("theme.card.borderColor", v, true)} />
-        <RangeControl label="Border opacity" value={theme.card.borderOpacity} min={0} max={100} unit="%" onChange={(v) => set("theme.card.borderOpacity", v, true)} />
-        <RangeControl label="Border width" value={theme.card.borderWidth} min={0} max={6} unit="px" onChange={(v) => set("theme.card.borderWidth", v, true)} />
-        <SegmentedControl
-          label="Corner radius"
-          value={theme.card.radius}
-          options={[
-            { value: "none", label: "0" },
-            { value: "sm", label: "S" },
-            { value: "md", label: "M" },
-            { value: "lg", label: "L" },
-            { value: "xl", label: "XL" },
-            { value: "full", label: "Pill" },
-          ]}
-          onChange={(v) => set("theme.card.radius", v)}
-        />
-        <SegmentedControl
-          label="Shadow"
-          value={theme.card.shadow}
-          options={[
-            { value: "none", label: "None" },
-            { value: "soft", label: "Soft" },
-            { value: "strong", label: "Strong" },
-          ]}
-          onChange={(v) => set("theme.card.shadow", v)}
-        />
-        <RangeControl label="Glass blur" value={theme.card.blur} min={0} max={40} unit="px" onChange={(v) => set("theme.card.blur", v, true)} />
-        <RangeControl label="Padding" value={theme.card.padding} min={8} max={64} unit="px" onChange={(v) => set("theme.card.padding", v, true)} />
-      </ControlGroup>
-
-      <ControlGroup title="Colours">
-        <ColorControl label="Text" value={theme.text.primary} onChange={(v) => set("theme.text.primary", v, true)} />
-        <ColorControl label="Muted" value={theme.text.muted} onChange={(v) => set("theme.text.muted", v, true)} />
-        <ColorControl label="Accent" value={theme.text.accent} onChange={(v) => set("theme.text.accent", v, true)} />
-      </ControlGroup>
-
-      <ControlGroup title="Typography">
-        <SegmentedControl
-          label="Font"
-          value={theme.typography.font}
-          options={[
-            { value: "inter", label: "Inter" },
-            { value: "sora", label: "Sora" },
-            { value: "system", label: "System" },
-            { value: "serif", label: "Serif" },
-            { value: "mono", label: "Mono" },
-          ]}
-          onChange={(v) => set("theme.typography.font", v)}
-        />
-        <RangeControl label="Base size" value={theme.typography.baseSize} min={12} max={22} unit="px" onChange={(v) => set("theme.typography.baseSize", v, true)} />
-        <RangeControl label="Line height" value={theme.typography.lineHeight} min={1.1} max={2} step={0.05} onChange={(v) => set("theme.typography.lineHeight", v, true)} />
-        <RangeControl label="Letter spacing" value={theme.typography.letterSpacing} min={-2} max={4} step={0.1} unit="%" onChange={(v) => set("theme.typography.letterSpacing", v, true)} />
-        <SegmentedControl
-          label="Heading weight"
-          value={theme.typography.headingWeight}
-          options={[
-            { value: "500", label: "500" },
-            { value: "600", label: "600" },
-            { value: "700", label: "700" },
-            { value: "800", label: "800" },
-          ]}
-          onChange={(v) => set("theme.typography.headingWeight", v)}
-          columns={4}
-        />
-      </ControlGroup>
-
-      <ControlGroup title="Buttons" defaultOpen={false}>
-        <SegmentedControl
-          label="Shape"
-          value={theme.buttons.radius}
-          options={[
-            { value: "none", label: "0" },
-            { value: "md", label: "M" },
-            { value: "lg", label: "L" },
-            { value: "full", label: "Pill" },
-          ]}
-          onChange={(v) => set("theme.buttons.radius", v)}
-          columns={4}
-        />
-        <ColorControl label="Fill" value={theme.buttons.fill} onChange={(v) => set("theme.buttons.fill", v, true)} />
-        <RangeControl label="Fill opacity" value={theme.buttons.fillOpacity} min={0} max={100} unit="%" onChange={(v) => set("theme.buttons.fillOpacity", v, true)} />
-        <ToggleControl label="Lift on hover" checked={theme.buttons.hoverLift} onChange={(v) => set("theme.buttons.hoverLift", v)} />
-      </ControlGroup>
-
-      <ControlGroup title="Layout">
-        <RangeControl label="Card width" value={layout.width} min={320} max={760} unit="px" onChange={(v) => set("layout.width", v, true)} />
-        <RangeControl label="Gap" value={layout.gap} min={4} max={32} unit="px" onChange={(v) => set("layout.gap", v, true)} />
-        <SegmentedControl
-          label="Alignment"
-          value={layout.alignment}
-          options={[
-            { value: "center", label: "Center" },
-            { value: "left", label: "Left" },
-          ]}
-          onChange={(v) => set("layout.alignment", v)}
-        />
-        <ToggleControl label="Show avatar" checked={layout.showAvatar} onChange={(v) => set("layout.showAvatar", v)} />
-        <ToggleControl label="Show location" checked={layout.showLocation} onChange={(v) => set("layout.showLocation", v)} />
-        <ToggleControl label="Show status" checked={layout.showStatus} onChange={(v) => set("layout.showStatus", v)} />
-      </ControlGroup>
-
-      <ControlGroup title="Effects" defaultOpen={false}>
-        <ToggleControl label="Animated background" checked={theme.effects.animatedBackground} onChange={(v) => set("theme.effects.animatedBackground", v)} />
-        <ToggleControl label="Accent glow" checked={theme.effects.glow} onChange={(v) => set("theme.effects.glow", v)} />
-        <ToggleControl label="Film grain" checked={theme.effects.noise} onChange={(v) => set("theme.effects.noise", v)} />
-        <SegmentedControl
-          label="Entrance"
-          value={theme.effects.entrance}
-          options={[
-            { value: "none", label: "None" },
-            { value: "fade", label: "Fade" },
-            { value: "rise", label: "Rise" },
-          ]}
-          onChange={(v) => set("theme.effects.entrance", v)}
-        />
-      </ControlGroup>
-    </div>
-  );
-}
-
-function IdentityPanel({
+function ProfilePanel({
   identity,
-  setIdentity,
-  onSaved,
-  onError,
+  uploading,
+  onChange,
+  onAvatarUpload,
 }: {
-  identity: EditorProps["identity"];
-  setIdentity: (value: EditorProps["identity"]) => void;
-  onSaved: (value: EditorProps["identity"]) => void;
-  onError: (message: string) => void;
+  identity: {
+    displayName: string;
+    headline: string;
+    bio: string;
+    location: string;
+    statusText: string;
+    avatarUrl: string | null;
+    visibility: "PUBLIC" | "UNLISTED" | "PRIVATE";
+  };
+  uploading: boolean;
+  onChange: (patch: Partial<typeof identity>) => void;
+  onAvatarUpload: (file: File) => void;
 }) {
-  const [pending, startTransition] = useTransition();
-  const [avatarBusy, setAvatarBusy] = useState(false);
-  const fileInput = useRef<HTMLInputElement>(null);
-
-  async function uploadAvatar(file: File) {
-    setAvatarBusy(true);
-    const form = new FormData();
-    form.set("file", file);
-    form.set("kind", "AVATAR");
-
-    try {
-      const res = await fetch("/api/media", { method: "POST", body: form });
-      const data = (await res.json()) as { ok: boolean; url?: string; error?: string };
-      if (!data.ok || !data.url) throw new Error(data.error ?? "Upload failed");
-
-      // Persist immediately: the avatar lives on the account, not in the draft
-      // config, so it must be written before the editor can show it as saved.
-      const applied = await applyAvatar(data.url);
-      if (!applied.ok) throw new Error(applied.error);
-
-      setIdentity({ ...identity, avatarUrl: data.url });
-    } catch (error) {
-      onError(error instanceof Error ? error.message : "Upload failed");
-    } finally {
-      setAvatarBusy(false);
-    }
-  }
-
   return (
-    <div className="p-4">
-      <div className="mb-5 flex items-center gap-3">
-        <div className="relative size-16 shrink-0 overflow-hidden rounded-full border border-ink-200 bg-ink-100 dark:border-white/10 dark:bg-white/10">
+    <div className="space-y-4 p-4">
+      <div>
+        <span className="label">Avatar</span>
+        <div className="flex items-center gap-3">
           {identity.avatarUrl ? (
             // eslint-disable-next-line @next/next/no-img-element
-            <img src={identity.avatarUrl} alt="Your avatar" className="size-full object-cover" />
+            <img
+              src={identity.avatarUrl}
+              alt="Avatar preview"
+              className="size-14 rounded-full border border-ink-200 object-cover dark:border-white/10"
+            />
           ) : (
-            <span className="grid size-full place-items-center text-lg font-semibold text-ink-400">
+            <div className="grid size-14 place-items-center rounded-full bg-ink-100 text-sm font-medium text-ink-500 dark:bg-white/[0.06]">
               {(identity.displayName || "?").slice(0, 1).toUpperCase()}
-            </span>
+            </div>
           )}
+          <div className="flex flex-col gap-1.5">
+            <label className="btn-secondary cursor-pointer text-xs">
+              {uploading ? "Uploading…" : "Upload image"}
+              <input
+                type="file"
+                accept="image/png,image/jpeg,image/webp,image/avif,image/gif"
+                className="sr-only"
+                disabled={uploading}
+                onChange={(e) => {
+                  const file = e.target.files?.[0];
+                  e.target.value = "";
+                  if (file) onAvatarUpload(file);
+                }}
+              />
+            </label>
+            {identity.avatarUrl && (
+              <button
+                type="button"
+                className="text-left text-xs text-ink-400 hover:text-red-500"
+                onClick={() => onChange({ avatarUrl: null })}
+              >
+                Remove
+              </button>
+            )}
+          </div>
         </div>
-        <div className="space-y-1.5">
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={() => fileInput.current?.click()}
-            disabled={avatarBusy}
-            className="text-[11px]"
-          >
-            {avatarBusy ? <Spinner className="size-3" /> : <Icon icon={Upload} className="size-3" />}
-            {identity.avatarUrl ? "Replace" : "Upload"}
-          </Button>
-          {identity.avatarUrl && (
-            <button
-              type="button"
-              onClick={async () => {
-                const applied = await applyAvatar(null);
-                if (applied.ok) setIdentity({ ...identity, avatarUrl: null });
-                else onError(applied.error);
-              }}
-              className="block text-[11px] text-red-600 hover:underline dark:text-red-400"
-            >
-              Remove
-            </button>
-          )}
-          <input
-            ref={fileInput}
-            type="file"
-            accept="image/png,image/jpeg,image/webp,image/avif,image/gif"
-            className="hidden"
-            onChange={(e) => {
-              const file = e.target.files?.[0];
-              if (file) void uploadAvatar(file);
-              e.target.value = "";
-            }}
-          />
-        </div>
+        <p className="hint">PNG, JPEG, WebP, AVIF or GIF · re-encoded to WebP with EXIF stripped.</p>
       </div>
 
-      <div className="space-y-3">
-        <TextControl
-          label="Display name"
-          value={identity.displayName}
+      <SegmentedControl
+        label="Visibility"
+        columns={3}
+        value={identity.visibility}
+        options={[
+          { value: "PUBLIC", label: "Public" },
+          { value: "UNLISTED", label: "Unlisted" },
+          { value: "PRIVATE", label: "Private" },
+        ]}
+        onChange={(visibility) => onChange({ visibility })}
+      />
+
+      <div>
+        <label className="label" htmlFor="ed-name">
+          Display name
+        </label>
+        <input
+          id="ed-name"
+          className="field"
           maxLength={60}
-          onChange={(v) => setIdentity({ ...identity, displayName: v })}
+          value={identity.displayName}
+          onChange={(e) => onChange({ displayName: e.target.value })}
+          placeholder="Your name"
         />
-        <TextControl
-          label="Headline"
+      </div>
+
+      <div>
+        <label className="label" htmlFor="ed-headline">
+          Headline
+        </label>
+        <input
+          id="ed-headline"
+          className="field"
+          maxLength={120}
           value={identity.headline}
-          maxLength={120}
-          placeholder="One line about you"
-          onChange={(v) => setIdentity({ ...identity, headline: v })}
+          onChange={(e) => onChange({ headline: e.target.value })}
+          placeholder="One-line intro"
         />
-        <TextControl
-          label="Bio"
-          value={identity.bio}
+      </div>
+
+      <div>
+        <label className="label" htmlFor="ed-bio">
+          Bio
+        </label>
+        <textarea
+          id="ed-bio"
+          className="field min-h-[100px] resize-y"
           maxLength={600}
-          multiline
-          placeholder="A few sentences about what you do"
-          onChange={(v) => setIdentity({ ...identity, bio: v })}
+          value={identity.bio}
+          onChange={(e) => onChange({ bio: e.target.value })}
+          placeholder="A short note about what you make or care about."
         />
-        <TextControl
-          label="Location"
-          value={identity.location}
-          maxLength={120}
-          placeholder="Tirana, AL"
-          onChange={(v) => setIdentity({ ...identity, location: v })}
-        />
-        <TextControl
-          label="Status"
-          value={identity.statusText}
-          maxLength={120}
-          placeholder="Open to freelance work"
-          onChange={(v) => setIdentity({ ...identity, statusText: v })}
-        />
+        <p className="hint">{identity.bio.length}/600</p>
+      </div>
 
+      <div className="grid grid-cols-2 gap-3">
         <div>
-          <p className="mb-1.5 text-xs text-ink-600 dark:text-ink-300">Visibility</p>
-          <SegmentedControl
-            value={identity.visibility}
-            options={[
-              { value: "PUBLIC", label: "Public" },
-              { value: "UNLISTED", label: "Unlisted" },
-              { value: "PRIVATE", label: "Private" },
-            ]}
-            onChange={(v) => setIdentity({ ...identity, visibility: v })}
+          <label className="label" htmlFor="ed-location">
+            Location
+          </label>
+          <input
+            id="ed-location"
+            className="field"
+            maxLength={120}
+            value={identity.location}
+            onChange={(e) => onChange({ location: e.target.value })}
+            placeholder="City"
           />
-          <p className="mt-1.5 text-[11px] text-ink-400">
-            {identity.visibility === "PUBLIC"
-              ? "Anyone with the link can view it, and search engines may index it."
-              : identity.visibility === "UNLISTED"
-                ? "Anyone with the link can view it, but it is excluded from indexing."
-                : "Only you can see it. Visitors get a 404."}
-          </p>
         </div>
-
-        <Button
-          variant="accent"
-          className="w-full text-[12px]"
-          disabled={pending}
-          onClick={() =>
-            startTransition(async () => {
-              const result = await saveIdentity({
-                displayName: identity.displayName,
-                bio: identity.bio,
-                headline: identity.headline,
-                location: identity.location,
-                statusText: identity.statusText,
-                visibility: identity.visibility,
-              });
-              if (result.ok) onSaved(identity);
-              else onError(result.error);
-            })
-          }
-        >
-          {pending ? <Spinner className="size-3.5" /> : <Icon icon={Save} className="size-3.5" />}
-          Save details
-        </Button>
-        <p className="text-center text-[11px] text-ink-400">
-          Remember to publish for these changes to appear on your live profile.
-        </p>
+        <div>
+          <label className="label" htmlFor="ed-status">
+            Status
+          </label>
+          <input
+            id="ed-status"
+            className="field"
+            maxLength={120}
+            value={identity.statusText}
+            onChange={(e) => onChange({ statusText: e.target.value })}
+            placeholder="Available, building…"
+          />
+        </div>
       </div>
     </div>
   );
 }
+
+/* -------------------------------------------------------------------------
+ * Links panel
+ * ---------------------------------------------------------------------- */
 
 function LinksPanel({
   links,
-  setLinks,
-  onToast,
+  onChange,
+  onStatus,
 }: {
-  links: LinkRow[];
-  setLinks: (links: LinkRow[]) => void;
-  onToast: (tone: "ok" | "error", message: string) => void;
+  links: ProfileLink[];
+  onChange: (next: ProfileLink[]) => void;
+  onStatus: (msg: string, isErr?: boolean) => void;
 }) {
-  const [adding, setAdding] = useState(false);
+  const [label, setLabel] = useState("");
+  const [url, setUrl] = useState("");
+  const [icon, setIcon] = useState<string>("LINK");
+  const [highlight, setHighlight] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
-  const [form, setForm] = useState({ label: "", url: "", icon: "LINK", highlight: false });
-  const [busy, setBusy] = useState(false);
-  const dragIndex = useRef<number | null>(null);
+  const [pending, startTransition] = useTransition();
 
-  function resetForm() {
-    setForm({ label: "", url: "", icon: "LINK", highlight: false });
-    setAdding(false);
-    setEditingId(null);
+  function addLink(event: React.FormEvent) {
+    event.preventDefault();
+    startTransition(async () => {
+      const normalized = /^[a-z]+:/i.test(url) ? url : `https://${url}`;
+      const res = await createLinkAction({ label, url: normalized, icon, highlight });
+      if (!res.ok) {
+        onStatus(res.error, true);
+        return;
+      }
+      onChange([...links, res.link]);
+      setLabel("");
+      setUrl("");
+      setHighlight(false);
+      onStatus("Link added.");
+    });
   }
 
-  async function submit() {
-    setBusy(true);
-    const result: ActionResult<{ id: string }> =
-      editingId !== null
-        ? await editLink({ id: editingId, ...form })
-        : (await addLink(form)) as ActionResult<{ id: string }>;
-
-    setBusy(false);
-    if (!result.ok) {
-      onToast("error", result.error);
-      return;
-    }
-
-    if (editingId !== null) {
-      setLinks(links.map((l) => (l.id === editingId ? { ...l, ...form } : l)));
-    } else if (result.data?.id) {
-      setLinks([...links, { id: result.data.id, visible: true, ...form }]);
-    }
-    resetForm();
-  }
-
-  async function persistOrder(next: LinkRow[]) {
-    setLinks(next);
-    const result = await moveLink(next[0]?.id ?? "", next.map((l) => l.id));
-    if (!result.ok) onToast("error", result.error);
-  }
-
-  function move(index: number, direction: -1 | 1) {
-    const target = index + direction;
+  function move(index: number, delta: -1 | 1) {
+    const target = index + delta;
     if (target < 0 || target >= links.length) return;
-    const next = [...links];
-    [next[index], next[target]] = [next[target], next[index]];
-    void persistOrder(next);
+    const reordered = [...links];
+    const [moved] = reordered.splice(index, 1);
+    reordered.splice(target, 0, moved);
+    onChange(reordered);
+    startTransition(async () => {
+      const res = await reorderLinksAction(reordered.map((l) => l.id));
+      if (!res.ok) onStatus(res.error, true);
+    });
+  }
+
+  function toggleFlag(link: ProfileLink, field: "visible" | "highlight") {
+    const next = { ...link, [field]: !link[field] };
+    onChange(links.map((l) => (l.id === link.id ? next : l)));
+    startTransition(async () => {
+      const res = await updateLinkAction(link.id, {
+        label: next.label,
+        url: next.url,
+        icon: next.icon,
+        highlight: next.highlight,
+        visible: next.visible,
+      });
+      if (!res.ok) onStatus(res.error, true);
+    });
+  }
+
+  function saveEdit(link: ProfileLink) {
+    startTransition(async () => {
+      const normalized = /^[a-z]+:/i.test(link.url) ? link.url : `https://${link.url}`;
+      const res = await updateLinkAction(link.id, {
+        label: link.label,
+        url: normalized,
+        icon: link.icon,
+        highlight: link.highlight,
+        visible: link.visible,
+      });
+      if (!res.ok) {
+        onStatus(res.error, true);
+        return;
+      }
+      onChange(links.map((l) => (l.id === link.id ? { ...link, url: normalized } : l)));
+      setEditingId(null);
+      onStatus("Link updated.");
+    });
+  }
+
+  function remove(id: string) {
+    const previous = links;
+    onChange(links.filter((l) => l.id !== id));
+    startTransition(async () => {
+      const res = await deleteLinkAction(id);
+      if (!res.ok) {
+        onChange(previous);
+        onStatus(res.error, true);
+      } else {
+        onStatus("Link removed.");
+      }
+    });
   }
 
   return (
-    <div className="p-4">
-      <div className="mb-3 flex items-center justify-between">
-        <p className="text-xs font-medium text-ink-600 dark:text-ink-300">
-          {links.length} link{links.length === 1 ? "" : "s"}
-        </p>
-        {!adding && editingId === null && (
-          <Button variant="ghost" size="sm" onClick={() => setAdding(true)} className="text-[11px]">
-            <Icon icon={Plus} className="size-3" /> Add
-          </Button>
-        )}
-      </div>
-
-      {(adding || editingId !== null) && (
-        <div className="mb-4 space-y-2.5 rounded-xl border border-ink-200 bg-ink-50/60 p-3 dark:border-white/10 dark:bg-white/[0.03]">
-          <Input
-            value={form.label}
-            onChange={(e) => setForm({ ...form, label: e.target.value })}
-            placeholder="Label (e.g. Instagram)"
-            className="text-xs"
-            aria-label="Link label"
-            maxLength={80}
-          />
-          <Input
-            value={form.url}
-            onChange={(e) => setForm({ ...form, url: e.target.value })}
-            placeholder="https://instagram.com/you"
-            className="text-xs"
-            aria-label="Link URL"
-            inputMode="url"
-          />
-          <div className="flex items-center justify-between">
-            <label className="flex items-center gap-1.5 text-[11px] text-ink-600 dark:text-ink-300">
-              <input
-                type="checkbox"
-                checked={form.highlight}
-                onChange={(e) => setForm({ ...form, highlight: e.target.checked })}
-                className="accent-brand-500"
-              />
-              Highlight
-            </label>
-            <div className="flex gap-1.5">
-              <Button variant="quiet" size="sm" onClick={resetForm} className="text-[11px]">
-                Cancel
-              </Button>
-              <Button variant="accent" size="sm" onClick={() => void submit()} disabled={busy || !form.label || !form.url} className="text-[11px]">
-                {busy ? <Spinner className="size-3" /> : null}
-                {editingId !== null ? "Update" : "Add link"}
-              </Button>
-            </div>
-          </div>
+    <div className="space-y-5 p-4">
+      <form onSubmit={addLink} className="space-y-3 rounded-xl bg-ink-50 p-3.5 dark:bg-white/[0.03]">
+        <p className="text-xs font-medium">Add a link</p>
+        <input
+          className="field"
+          placeholder="Label (e.g. GitHub)"
+          value={label}
+          onChange={(e) => setLabel(e.target.value)}
+          required
+          maxLength={80}
+        />
+        <input
+          className="field"
+          placeholder="https://github.com/you"
+          value={url}
+          onChange={(e) => setUrl(e.target.value)}
+          required
+          maxLength={2048}
+        />
+        <div className="flex items-center justify-between gap-2">
+          <select
+            value={icon}
+            onChange={(e) => setIcon(e.target.value)}
+            className="field py-1.5 text-xs"
+            aria-label="Icon"
+          >
+            {ICON_CHOICES.map((name) => (
+              <option key={name} value={name}>
+                {name}
+              </option>
+            ))}
+          </select>
+          <label className="flex shrink-0 items-center gap-1.5 text-xs text-ink-600 dark:text-ink-300">
+            <input
+              type="checkbox"
+              checked={highlight}
+              onChange={(e) => setHighlight(e.target.checked)}
+              className="rounded accent-brand-500"
+            />
+            Highlight
+          </label>
         </div>
-      )}
+        <button type="submit" disabled={pending} className="btn-primary w-full text-xs">
+          Add link
+        </button>
+      </form>
 
-      {links.length === 0 && !adding ? (
-        <p className="rounded-xl border border-dashed border-ink-200 px-3 py-8 text-center text-[11px] text-ink-400 dark:border-white/10">
-          No links yet. Add your socials, website or anything else.
-        </p>
+      {links.length === 0 ? (
+        <p className="py-6 text-center text-xs text-ink-400">No links yet.</p>
       ) : (
-        <ul className="space-y-1.5">
-          {links.map((link, index) => (
-            <li
-              key={link.id}
-              draggable
-              onDragStart={() => (dragIndex.current = index)}
-              onDragOver={(e) => e.preventDefault()}
-              onDrop={() => {
-                const from = dragIndex.current;
-                dragIndex.current = null;
-                if (from === null || from === index) return;
-                const next = [...links];
-                const [moved] = next.splice(from, 1);
-                next.splice(index, 0, moved);
-                void persistOrder(next);
-              }}
-              className={cn(
-                "flex items-center gap-1.5 rounded-lg border border-ink-200 bg-white px-2 py-1.5 dark:border-white/10 dark:bg-white/[0.03]",
-                !link.visible && "opacity-55",
-              )}
-            >
-              <Icon icon={GripVertical} className="size-3.5 shrink-0 cursor-grab text-ink-300" aria-hidden />
-              <div className="min-w-0 flex-1">
-                <p className="truncate text-[12px] font-medium">{link.label}</p>
-                <p className="truncate text-[10px] text-ink-400">{link.url}</p>
-              </div>
-              <div className="flex shrink-0 items-center">
-                <button onClick={() => move(index, -1)} disabled={index === 0} className="btn-quiet !p-1 disabled:opacity-30" aria-label={`Move ${link.label} up`}>
-                  <Icon icon={ChevronUp} className="size-3" />
-                </button>
-                <button onClick={() => move(index, 1)} disabled={index === links.length - 1} className="btn-quiet !p-1 disabled:opacity-30" aria-label={`Move ${link.label} down`}>
-                  <Icon icon={ChevronDown} className="size-3" />
-                </button>
-                <button
-                  onClick={async () => {
-                    const next = links.map((l) => (l.id === link.id ? { ...l, visible: !l.visible } : l));
-                    setLinks(next);
-                    const result = await editLink({ id: link.id, label: link.label, url: link.url, icon: link.icon, highlight: link.highlight, visible: !link.visible });
-                    if (!result.ok) onToast("error", result.error);
-                  }}
-                  className="btn-quiet !p-1"
-                  aria-label={link.visible ? `Hide ${link.label}` : `Show ${link.label}`}
-                >
-                  {link.visible ? <Icon icon={Eye} className="size-3" /> : <Icon icon={EyeOff} className="size-3" />}
-                </button>
-                <button
-                  onClick={() => {
-                    setEditingId(link.id);
-                    setAdding(false);
-                    setForm({ label: link.label, url: link.url, icon: link.icon, highlight: link.highlight });
-                  }}
-                  className="btn-quiet !p-1"
-                  aria-label={`Edit ${link.label}`}
-                >
-                  <Icon icon={Pencil} className="size-3" />
-                </button>
-                <button
-                  onClick={async () => {
-                    const result = await removeLink(link.id);
-                    if (result.ok) setLinks(links.filter((l) => l.id !== link.id));
-                    else onToast("error", result.error);
-                  }}
-                  className="btn-quiet !p-1 text-red-500 hover:!bg-red-50 dark:hover:!bg-red-500/10"
-                  aria-label={`Delete ${link.label}`}
-                >
-                  <Icon icon={Trash2} className="size-3" />
-                </button>
-              </div>
-            </li>
-          ))}
-        </ul>
-      )}
-
-      <p className="mt-3 text-[10px] leading-relaxed text-ink-400">
-        Drag to reorder. Links support https:// and mailto: only.
-      </p>
-    </div>
-  );
-}
-
-function PublishPanel({
-  draftDirty,
-  publishedAt,
-  revision,
-  versions,
-  onPublish,
-  onRestore,
-  publishing,
-}: {
-  draftDirty: boolean;
-  publishedAt: string | null;
-  revision: number;
-  versions: VersionRow[];
-  onPublish: () => void;
-  onRestore: (id: string) => Promise<void>;
-  publishing: boolean;
-}) {
-  return (
-    <div className="p-4">
-      <div
-        className={cn(
-          "rounded-xl border px-3 py-2.5 text-[11px]",
-          draftDirty
-            ? "border-amber-200 bg-amber-50 text-amber-900 dark:border-amber-400/25 dark:bg-amber-400/10 dark:text-amber-200"
-            : "border-brand-200 bg-brand-50 text-brand-800 dark:border-brand-400/25 dark:bg-brand-400/10 dark:text-brand-200",
-        )}
-      >
-        {draftDirty
-          ? "You have unpublished changes. Visitors still see the previous version."
-          : publishedAt
-            ? "Your published profile matches your draft."
-            : "Not published yet. Publish to make your profile live."}
-      </div>
-
-      <Button variant="accent" className="mt-3 w-full text-[12px]" onClick={onPublish} disabled={publishing}>
-        {publishing ? <Spinner className="size-3.5" /> : <Icon icon={Sparkles} className="size-3.5" />}
-        Publish now
-      </Button>
-
-      <div className="mt-5">
-        <p className="eyebrow">Version history</p>
-        {versions.length === 0 ? (
-          <p className="mt-2 text-[11px] text-ink-400">Publish once to start keeping history.</p>
-        ) : (
-          <ul className="mt-2 space-y-1.5">
-            {versions.map((version) => (
-              <li key={version.id} className="flex items-center justify-between rounded-lg border border-ink-200 px-2.5 py-2 text-[11px] dark:border-white/10">
-                <div>
-                  <p className="font-medium">Version {version.version}</p>
-                  <details className="mt-1 max-w-[220px] break-words">
-                    <summary className="cursor-pointer">{version.changes.length} changes vs previous revision</summary>
-                    <ul className="mt-2 space-y-2">{version.changes.map((change) => <li key={change.path}>
-                      <strong>{change.path || "snapshot"}</strong>
-                      <p className="text-red-500">− {change.before}</p>
-                      <p className="text-brand-600 dark:text-brand-300">+ {change.after}</p>
-                    </li>)}</ul>
-                  </details>
-                  <p className="text-[10px] text-ink-400">
-                    {new Date(version.createdAt).toLocaleString("en", { dateStyle: "medium", timeStyle: "short" })}
-                  </p>
-                </div>
-                {version.version === revision ? (
-                  <span className="chip-accent">live</span>
+        <ul className="space-y-2">
+          {links.map((link, index) => {
+            const editing = editingId === link.id;
+            const LinkIconComp = linkIcon(link.icon);
+            return (
+              <li
+                key={link.id}
+                className={cn(
+                  "rounded-xl border border-ink-200/80 p-3 text-xs dark:border-white/10",
+                  !link.visible && "opacity-55",
+                )}
+              >
+                {editing ? (
+                  <div className="space-y-2">
+                    <input
+                      className="field py-1.5 text-xs"
+                      value={link.label}
+                      maxLength={80}
+                      onChange={(e) =>
+                        onChange(links.map((l) => (l.id === link.id ? { ...l, label: e.target.value } : l)))
+                      }
+                    />
+                    <input
+                      className="field py-1.5 text-xs"
+                      value={link.url}
+                      maxLength={2048}
+                      onChange={(e) =>
+                        onChange(links.map((l) => (l.id === link.id ? { ...l, url: e.target.value } : l)))
+                      }
+                    />
+                    <div className="flex items-center justify-between gap-2">
+                      <select
+                        value={link.icon}
+                        onChange={(e) =>
+                          onChange(links.map((l) => (l.id === link.id ? { ...l, icon: e.target.value } : l)))
+                        }
+                        className="field py-1 text-xs"
+                      >
+                        {ICON_CHOICES.map((name) => (
+                          <option key={name} value={name}>
+                            {name}
+                          </option>
+                        ))}
+                      </select>
+                      <button
+                        type="button"
+                        onClick={() => saveEdit(link)}
+                        disabled={pending}
+                        className="btn-primary px-3 py-1.5 text-xs"
+                      >
+                        Done
+                      </button>
+                    </div>
+                  </div>
                 ) : (
-                  <button
-                    onClick={() => void onRestore(version.id)}
-                    className="flex items-center gap-1 text-[11px] text-ink-500 hover:text-ink-900 dark:hover:text-white"
-                    title="Restore this version as a new publish"
-                  >
-                    <Icon icon={RotateCcw} className="size-3" /> Restore
-                  </button>
+                  <>
+                    <div className="flex items-center gap-2.5">
+                      <span className="text-ink-400">
+                        <Icon icon={LinkIconComp} className="size-4" aria-hidden />
+                      </span>
+                      <div className="min-w-0 flex-1">
+                        <p className="truncate font-medium">{link.label}</p>
+                        <p className="truncate text-[11px] text-ink-400">{link.url}</p>
+                      </div>
+                    </div>
+                    <div className="mt-2.5 flex items-center justify-between border-t border-ink-100 pt-2 dark:border-white/[0.06]">
+                      <div className="flex items-center gap-1">
+                        <button
+                          type="button"
+                          onClick={() => move(index, -1)}
+                          disabled={index === 0}
+                          aria-label="Move up"
+                          className="rounded px-1.5 py-0.5 text-ink-400 hover:bg-ink-100 hover:text-ink-800 disabled:opacity-30 dark:hover:bg-white/10"
+                        >
+                          ↑
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => move(index, 1)}
+                          disabled={index === links.length - 1}
+                          aria-label="Move down"
+                          className="rounded px-1.5 py-0.5 text-ink-400 hover:bg-ink-100 hover:text-ink-800 disabled:opacity-30 dark:hover:bg-white/10"
+                        >
+                          ↓
+                        </button>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <button
+                          type="button"
+                          onClick={() => setEditingId(link.id)}
+                          className="text-ink-500 hover:text-ink-900 dark:text-ink-400 dark:hover:text-white"
+                        >
+                          Edit
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => toggleFlag(link, "highlight")}
+                          className={cn(
+                            link.highlight
+                              ? "font-medium text-brand-600 dark:text-brand-400"
+                              : "text-ink-400 hover:text-ink-800 dark:hover:text-white",
+                          )}
+                        >
+                          ★
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => toggleFlag(link, "visible")}
+                          className="text-ink-500 hover:text-ink-900 dark:text-ink-400 dark:hover:text-white"
+                        >
+                          {link.visible ? "Hide" : "Show"}
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => remove(link.id)}
+                          className="text-ink-400 hover:text-red-500"
+                        >
+                          Delete
+                        </button>
+                      </div>
+                    </div>
+                  </>
                 )}
               </li>
-            ))}
-          </ul>
-        )}
-      </div>
-    </div>
-  );
-}
-
-function ChecklistItem({ done, label }: { done: boolean; label: string }) {
-  return (
-    <li className="flex items-center gap-2">
-      <span
-        className={cn(
-          "grid size-4 shrink-0 place-items-center rounded-full text-[9px] font-bold",
-          done ? "bg-brand-500 text-white" : "border border-ink-300 text-transparent dark:border-white/20",
-        )}
-        aria-hidden
-      >
-        ✓
-      </span>
-      <span className={done ? "text-ink-500 line-through decoration-ink-300 dark:text-ink-400" : ""}>{label}</span>
-    </li>
-  );
-}
-
-function ShortcutRow({ keys, action }: { keys: string; action: string }) {
-  return (
-    <div className="flex items-center justify-between gap-2">
-      <dt>{action}</dt>
-      <dd className="rounded border border-ink-200 bg-ink-50 px-1.5 py-0.5 font-mono text-[10px] dark:border-white/10 dark:bg-white/[0.05]">
-        {keys}
-      </dd>
-    </div>
-  );
-}
-
-/** Uploads a background image and stores its media URL in the draft config. */
-function BackgroundUpload({
-  value,
-  onChange,
-  onError,
-}: {
-  value: string | null;
-  onChange: (url: string | null) => void;
-  onError: (message: string) => void;
-}) {
-  const inputRef = useRef<HTMLInputElement>(null);
-  const [busy, setBusy] = useState(false);
-
-  async function upload(file: File) {
-    setBusy(true);
-    const form = new FormData();
-    form.set("file", file);
-    form.set("kind", "BACKGROUND");
-    try {
-      const res = await fetch("/api/media", { method: "POST", body: form });
-      const data = (await res.json()) as { ok: boolean; url?: string; error?: string };
-      if (!data.ok || !data.url) throw new Error(data.error ?? "Upload failed");
-      onChange(data.url);
-    } catch (error) {
-      onError(error instanceof Error ? error.message : "Upload failed");
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  return (
-    <div>
-      <p className="mb-1.5 text-xs text-ink-600 dark:text-ink-300">Background image</p>
-      <div className="flex items-center gap-2">
-        <Button variant="ghost" size="sm" className="text-[11px]" onClick={() => inputRef.current?.click()} disabled={busy}>
-          {busy ? <Spinner className="size-3" /> : <Icon icon={Upload} className="size-3" />}
-          {value ? "Replace" : "Upload"}
-        </Button>
-        {value && (
-          <button
-            type="button"
-            onClick={() => onChange(null)}
-            className="text-[11px] text-red-600 hover:underline dark:text-red-400"
-          >
-            Remove
-          </button>
-        )}
-      </div>
-      <input
-        ref={inputRef}
-        type="file"
-        accept="image/png,image/jpeg,image/webp,image/avif,image/gif"
-        className="hidden"
-        onChange={(e) => {
-          const file = e.target.files?.[0];
-          if (file) void upload(file);
-          e.target.value = "";
-        }}
-      />
-      {value && (
-        <div
-          className="mt-2 h-16 w-full rounded-lg border border-ink-200 bg-cover bg-center dark:border-white/10"
-          suppressHydrationWarning
-          style={{ backgroundImage: `url(${value})` }}
-          aria-hidden
-        />
+            );
+          })}
+        </ul>
       )}
     </div>
-  );
-}
-
-/** Preview stylesheet — the same generator the public page uses, plus keys. */
-import { buildProfileCss } from "@/lib/profile-css";
-
-function buildLiveCss(config: ProfileConfig): string {
-  return (
-    buildProfileCss(config) +
-    `@keyframes vp-rise{from{opacity:0;transform:translateY(10px)}to{opacity:1;transform:none}}@keyframes vp-fade{from{opacity:0}to{opacity:1}}.vp-anim-rise{animation:vp-rise .55s cubic-bezier(.22,1,.36,1) both}.vp-anim-fade{animation:vp-fade .45s ease both}`
   );
 }

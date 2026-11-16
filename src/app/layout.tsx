@@ -1,6 +1,13 @@
 import type { Metadata, Viewport } from "next";
 import "@fontsource-variable/inter";
 import "@fontsource-variable/sora";
+import "@fontsource-variable/space-grotesk";
+import "@fontsource-variable/plus-jakarta-sans";
+import "@fontsource-variable/dm-sans";
+import "@fontsource-variable/outfit";
+import "@fontsource-variable/playfair-display";
+import "@fontsource-variable/jetbrains-mono";
+import "@fontsource-variable/fira-code";
 import "./globals.css";
 import { env } from "@/lib/env";
 

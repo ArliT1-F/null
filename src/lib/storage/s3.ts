@@ -7,7 +7,8 @@ import {
   PutObjectCommand,
   S3Client,
 } from "@aws-sdk/client-s3";
-import { assertSafeKey, type StorageProvider, type StoredObject } from "./types";
+import { contentTypeForKey } from "./local";
+import { assertSafeKey, type StorageProvider, type StoredObject, type StoredRangeObject } from "./types";
 
 /**
  * S3-compatible storage (Cloudflare R2, MinIO, AWS S3).
@@ -64,10 +65,45 @@ export class S3StorageProvider implements StorageProvider {
       if (!res.Body) return null;
       return {
         body: res.Body.transformToWebStream() as ReadableStream<Uint8Array>,
-        contentType: res.ContentType ?? "application/octet-stream",
+        contentType: res.ContentType ?? contentTypeForKey(key),
         size: Number(res.ContentLength ?? 0),
       };
     } catch {
+      return null;
+    }
+  }
+
+  async getRange(
+    key: string,
+    start: number,
+    requestedEnd?: number,
+  ): Promise<StoredRangeObject | "unsatisfiable" | null> {
+    assertSafeKey(key);
+    try {
+      const head = await this.client.send(new HeadObjectCommand({ Bucket: this.bucket, Key: key }));
+      const totalSize = Number(head.ContentLength ?? 0);
+      if (totalSize === 0 || start < 0 || start >= totalSize) return "unsatisfiable";
+      const end = requestedEnd !== undefined ? Math.min(requestedEnd, totalSize - 1) : totalSize - 1;
+      if (end < start) return "unsatisfiable";
+
+      const res = await this.client.send(
+        new GetObjectCommand({
+          Bucket: this.bucket,
+          Key: key,
+          Range: `bytes=${start}-${end}`,
+        }),
+      );
+      if (!res.Body) return null;
+      return {
+        body: res.Body.transformToWebStream() as ReadableStream<Uint8Array>,
+        contentType: res.ContentType ?? contentTypeForKey(key),
+        size: end - start + 1,
+        start,
+        end,
+        totalSize,
+      };
+    } catch (err) {
+      if ((err as { name?: string }).name === "InvalidRange") return "unsatisfiable";
       return null;
     }
   }

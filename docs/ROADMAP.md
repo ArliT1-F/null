@@ -1,7 +1,7 @@
 # Roadmap
 
-Only V1 is implemented. Everything below V1 is a plan, not a description of
-existing code.
+V1 and V2 are implemented. Everything from V3 onward is a plan, not a
+description of existing code.
 
 ## V1 — Functional foundation ✅
 
@@ -33,20 +33,21 @@ verifiable:
 Deliberately excluded from V1: payments, OAuth logins, third-party integrations,
 widgets, analytics, guestbooks, custom CSS.
 
-## V2 — Advanced customisation
+## V2 — Advanced customisation ✅
 
-- Drag-and-drop canvas: absolute positioning with alignment guides, not just a
-  centred card.
-- Component blocks: text, image, gallery, divider, embed — each with its own
-  properties panel.
-- Component hierarchy tree with grouping, visibility and locking.
-- Undo/redo history with named checkpoints and a visual timeline.
-- Revision history browsing with diffs and one-click restore.
-- Monaco CSS editor for **Pro** users, rendered inside a sandboxed iframe on a
-  separate origin — never on the application origin.
-- Per-breakpoint overrides (mobile/tablet/desktop) for every layout token.
-- Font uploads and Google Fonts selection with self-hosted serving.
-- Video backgrounds with poster fallback and data-saver handling.
+**Status: complete.** See [V2_PROGRESS.md](V2_PROGRESS.md) for validation details.
+
+| Requirement | Where |
+| --- | --- |
+| Stack + freeform drag-and-drop canvas with snap & guides | `src/lib/canvas-guides.ts`, `src/app/dashboard/editor/interactive-canvas.tsx` |
+| Component blocks (`text`, `image`, `gallery`, `divider`, `embed`) + inspector | `src/lib/profile-config.ts`, `src/app/dashboard/editor/block-inspector.tsx` |
+| Hierarchy tree with grouping, visibility, locking, duplicate, copy/paste | `src/app/dashboard/editor/blocks-panel.tsx` |
+| Undo/redo history with named checkpoints and timeline | `src/app/dashboard/editor/editor-store.ts`, `history-panel.tsx` |
+| Revision history browsing, notes, two-version diffs & append-only restore | `src/lib/profile-diff.ts`, `src/lib/profiles/service.ts` |
+| Entitlement-gated Pro Monaco CSS editor on isolated sandbox origin | `src/lib/{entitlements,custom-css,sandbox}.ts`, `src/app/sandbox/profile/[username]/route.ts` |
+| Per-breakpoint overrides (desktop / tablet / mobile) + container-isolated preview | `src/lib/profile-css.ts`, `src/app/dashboard/editor/design-panel.tsx` |
+| Self-hosted variable Google Fonts, font uploads & 20 curated + saved themes | `src/app/layout.tsx`, `src/lib/media-verify.ts`, `src/db/seed.ts` |
+| Video backgrounds (Range `206`, poster fallback, data-saver & reduced-motion) | `src/components/profile/background-video.tsx`, `src/app/api/media/[...key]/route.ts` |
 
 ## V3 — Interactive profiles
 

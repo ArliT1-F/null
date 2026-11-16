@@ -1,8 +1,8 @@
 {
   "name": "null",
-  "version": "1.0.0",
+  "version": "2.0.0",
   "private": true,
-  "description": "null \u2014 a customizable personal identity and profile platform.",
+  "description": "null — a customizable personal identity and profile platform.",
   "engines": {
     "node": ">=20.11"
   },
@@ -26,12 +26,20 @@
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.1169.0",
+    "@fontsource-variable/dm-sans": "^5.3.0",
+    "@fontsource-variable/fira-code": "^5.3.0",
     "@fontsource-variable/inter": "^5.3.0",
+    "@fontsource-variable/jetbrains-mono": "^5.3.0",
+    "@fontsource-variable/outfit": "^5.3.0",
+    "@fontsource-variable/playfair-display": "^5.3.0",
+    "@fontsource-variable/plus-jakarta-sans": "^5.3.0",
     "@fontsource-variable/sora": "^5.3.0",
+    "@fontsource-variable/space-grotesk": "^5.3.0",
     "@node-rs/argon2": "^2.2.2",
     "clsx": "^2.1.1",
     "drizzle-orm": "^0.45.4",
     "lucide-react": "^0.470.0",
+    "monaco-editor": "^0.56.0",
     "next": "15.5.29",
     "nodemailer": "^10.5.0",
     "pg": "^8.23.1",
@@ -53,10 +61,14 @@
     "drizzle-kit": "^0.31.11",
     "eslint": "^9.39.5",
     "eslint-config-next": "15.5.29",
-    "postcss": "^8.5.6",
+    "postcss": "^8.5.33",
     "tailwindcss": "^3.4.19",
     "tsx": "^4.23.15",
     "typescript": "^5.9.3",
     "vitest": "^3.2.4"
+  },
+  "overrides": {
+    "dompurify": "^3.4.18",
+    "postcss": "^8.5.33"
   }
 }

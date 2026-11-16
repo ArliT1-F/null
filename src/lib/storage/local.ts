@@ -3,7 +3,7 @@ import "server-only";
 import { createReadStream, promises as fs } from "node:fs";
 import path from "node:path";
 import { Readable } from "node:stream";
-import { assertSafeKey, type StorageProvider, type StoredObject } from "./types";
+import { assertSafeKey, type StorageProvider, type StoredObject, type StoredRangeObject } from "./types";
 
 /**
  * Local filesystem storage for development and the self-hosted desktop.
@@ -18,33 +18,22 @@ export class LocalStorageProvider implements StorageProvider {
   private readonly root: string;
 
   constructor(root: string) {
-    // `path.resolve(undefined)` throws ERR_INVALID_ARG_TYPE, which surfaces as a
-    // 500 with no hint about configuration. Fail with something readable
-    // instead — this is only reachable when MEDIA_ROOT was not resolved.
     if (typeof root !== "string" || root.trim() === "") {
       throw new Error(
         "MEDIA_ROOT is empty: refusing to start local storage. Set it to a writable path " +
-          '(e.g. MEDIA_ROOT=./media in development), or unset it to use the default.',
+          "(e.g. MEDIA_ROOT=./media in development), or unset it to use the default.",
       );
     }
     this.root = path.resolve(root.trim());
   }
-  /** 
-  * Turns a filesystem failure into something an operator can act on.
-  * 
-  * The raw error surfaces deep inside an upload as `EACCES: mkdir
-  * '/srv/null'`, which says nothing about which knob to turn. The usual
-  * cause is a `MEDIA_ROOT` copied from the Docker template (aboslute
-  * /srv/null/media) on a machine where that path is not writable.
-  */
 
   private unusable(cause: unknown, full: string): Error {
     const code = (cause as NodeJS.ErrnoException)?.code ?? "unknown";
     return new Error(
-      `MEDIA_ROOT is not writable: ${code} while writing "${full} (root: ${this.root}). ` +
-      "Create that directory and make it writable by the app user, or point MEDIA_ROOT at a " +
-      "writable path. Relative paths resolve from the working directory, so `MEDIA_ROOT=./media` " +
-      "is the usual development setting; Docker sets /srv/null/media for you.",
+      `MEDIA_ROOT is not writable: ${code} while writing "${full}" (root: ${this.root}). ` +
+        "Create that directory and make it writable by the app user, or point MEDIA_ROOT at a " +
+        "writable path. Relative paths resolve from the working directory, so `MEDIA_ROOT=./media` " +
+        "is the usual development setting; Docker sets /srv/null/media for you.",
       { cause },
     );
   }
@@ -61,14 +50,12 @@ export class LocalStorageProvider implements StorageProvider {
 
   async put(key: string, body: Buffer, contentType: string): Promise<StoredObject> {
     const full = this.resolve(key);
-    const tmp = `${full}.${Date.now()}.tmp`;
+    const tmp = `${full}.${process.pid}.${Date.now()}.tmp`;
     try {
       await fs.mkdir(path.dirname(full), { recursive: true });
-      // Write then rename so a partial upload never becomes visible.
       await fs.writeFile(tmp, body);
       await fs.rename(tmp, full);
     } catch (error) {
-      // Never leave a half-written upload behind.
       await fs.rm(tmp, { force: true }).catch(() => {});
       throw this.unusable(error, full);
     }
@@ -91,6 +78,37 @@ export class LocalStorageProvider implements StorageProvider {
       body: webStream,
       contentType: contentTypeForKey(key),
       size: stat.size,
+    };
+  }
+
+  async getRange(
+    key: string,
+    start: number,
+    requestedEnd?: number,
+  ): Promise<StoredRangeObject | "unsatisfiable" | null> {
+    const full = this.resolve(key);
+    let stat;
+    try {
+      stat = await fs.stat(full);
+    } catch {
+      return null;
+    }
+    if (!stat.isFile()) return null;
+
+    const totalSize = stat.size;
+    if (totalSize === 0 || start < 0 || start >= totalSize) return "unsatisfiable";
+    const end = requestedEnd !== undefined ? Math.min(requestedEnd, totalSize - 1) : totalSize - 1;
+    if (end < start) return "unsatisfiable";
+
+    const nodeStream = createReadStream(full, { start, end });
+    const webStream = Readable.toWeb(nodeStream) as ReadableStream<Uint8Array>;
+    return {
+      body: webStream,
+      contentType: contentTypeForKey(key),
+      size: end - start + 1,
+      start,
+      end,
+      totalSize,
     };
   }
 
@@ -131,7 +149,12 @@ const MIME_BY_EXT: Record<string, string> = {
   ".jpeg": "image/jpeg",
   ".png": "image/png",
   ".gif": "image/gif",
-  ".svg": "image/svg+xml",
+  ".woff2": "font/woff2",
+  ".woff": "font/woff",
+  ".ttf": "font/ttf",
+  ".otf": "font/otf",
+  ".mp4": "video/mp4",
+  ".webm": "video/webm",
   ".mp3": "audio/mpeg",
   ".ogg": "audio/ogg",
   ".txt": "text/plain",
