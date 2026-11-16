@@ -165,8 +165,20 @@ the Docker overlay or point `DATABASE_URL` elsewhere.
 **`server-only` import error in a script** — add
 `NODE_OPTIONS=--conditions=react-server`.
 
-**Images fail to upload** — check `MEDIA_ROOT` exists and is writable by the app
-user. In Docker it is the `media_data` volume.
+**Uploads fail with `EACCES: permission denied, mkdir '/srv/vessel'`** — your
+`MEDIA_ROOT` points at the container path on a machine where it is not writable.
+That value comes from the Docker setup (Compose sets it for the container, and
+`.env.example` used to ship it as a copyable line). Unset it to take the
+development default, or point it somewhere local:
+
+```bash
+# .env
+MEDIA_ROOT=./media     # relative paths resolve from the working directory
+```
+
+The failure message names the resolved path and the file it tried to write, so
+this is configuration, not a bug in the media pipeline. In Docker the path is the
+`media_data` volume.
 
 **`A tree hydrated but some attributes of the server rendered HTML didn't match
 the client properties`** — if the diff mentions `data-darkreader-inline-*`,
