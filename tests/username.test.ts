@@ -48,7 +48,7 @@ describe("validateUsername", () => {
   });
 
   it("blocks impersonation patterns", () => {
-    expect(validateUsername("vessel-support").ok).toBe(false);
+    expect(validateUsername("null-support").ok).toBe(false);
     expect(validateUsername("admin-official").ok).toBe(false);
     expect(validateUsername("someone-official").ok).toBe(false);
   });

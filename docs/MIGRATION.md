@@ -50,8 +50,8 @@ connection error rather than a confusing partial state.
 ### 2. Snapshot the source
 
 ```bash
-cd /srv/vessel
-BACKUP_MEDIA_DIR=/var/lib/docker/volumes/vessel_media_data/_data \
+cd /srv/null
+BACKUP_MEDIA_DIR=/var/lib/docker/volumes/null_media_data/_data \
   ./scripts/backup.sh
 ls -lh backups/
 ```
@@ -66,7 +66,7 @@ gunzip -c backups/db-<STAMP>.sql.gz | head -3
 ### 3. Prepare the target
 
 ```bash
-git clone <repo> /srv/vessel && cd /srv/vessel
+git clone <repo> /srv/null && cd /srv/null
 cp .env.cloud.example .env.cloud
 # fill in DATABASE_URL, AUTH_SECRET (same or new), APP_ENCRYPTION_KEY (MUST match),
 # S3_* or MEDIA_ROOT, MAIL_*, APP_URL (the new hostname)
@@ -85,7 +85,7 @@ npm run db:deploy
 ```bash
 gunzip -c backups/db-<STAMP>.sql.gz \
   | docker compose --env-file .env.cloud -f docker-compose.yml exec -T db \
-      psql -v ON_ERROR_STOP=1 -U vessel -d vessel
+      psql -v ON_ERROR_STOP=1 -U null -d null
 ```
 
 For a managed database, use its connection string instead:
@@ -100,14 +100,14 @@ gunzip -c backups/db-<STAMP>.sql.gz | psql "$DATABASE_URL" -v ON_ERROR_STOP=1
 
 ```bash
 rsync -av --progress \
-  /var/lib/docker/volumes/vessel_media_data/_data/ \
-  new-host:/var/lib/docker/volumes/vessel_media_data/_data/
+  /var/lib/docker/volumes/null_media_data/_data/ \
+  new-host:/var/lib/docker/volumes/null_media_data/_data/
 ```
 
 **Local → S3/R2:**
 
 ```bash
-rclone sync /var/lib/docker/volumes/vessel_media_data/_data/ r2:vessel-media
+rclone sync /var/lib/docker/volumes/null_media_data/_data/ r2:null-media
 ```
 
 Keep the directory structure exactly. `media_assets.storage_key` and the variant

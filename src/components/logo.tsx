@@ -3,7 +3,7 @@ import { env } from "@/lib/env";
 import { cn } from "@/lib/utils";
 
 /**
- * Vessel mark: a rounded "hull" formed by two arcs with a rising line through it.
+ * null mark: a rounded "hull" formed by two arcs with a rising line through it.
  * Pure SVG so it stays crisp and needs no asset pipeline.
  */
 export function Logo({ className }: { className?: string }) {

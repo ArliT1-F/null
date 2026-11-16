@@ -5,7 +5,7 @@ export default defineConfig({
   schema: "./src/db/schema.ts",
   out: "./src/db/migrations",
   dbCredentials: {
-    url: process.env.DATABASE_URL ?? "postgresql://vessel:vessel@localhost:5432/vessel",
+    url: process.env.DATABASE_URL ?? "postgresql://null:null@localhost:5432/null",
   },
   strict: true,
   verbose: true,

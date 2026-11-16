@@ -137,7 +137,7 @@ describe("POST /api/media", () => {
 
   it("does not leak internals on unexpected failures", async () => {
     const spy = vi.spyOn(console, "error").mockImplementation(() => {});
-    mocks.storeImage.mockRejectedValue(new Error("ENOENT: /srv/vessel/media/x"));
+    mocks.storeImage.mockRejectedValue(new Error("ENOENT: /srv/null/media/x"));
     const res = await POST(uploadRequest());
     expect(res.status).toBe(500);
     expect(JSON.stringify(await res.json())).not.toContain("ENOENT");

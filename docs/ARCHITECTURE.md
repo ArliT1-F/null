@@ -2,7 +2,7 @@
 
 ## Shape of the system
 
-Vessel is a **modular monolith**. There is one deployable unit (a Next.js
+null is a **modular monolith**. There is one deployable unit (a Next.js
 application) and one database. Modules are separated by directory and imports,
 not by network boundaries, because the target hardware is a home desktop with
 4–8 GB of RAM.
@@ -115,7 +115,7 @@ A profile owns a `ProfileConfig` validated by Zod:
 
 `themeToCssVars()` converts tokens into CSS custom properties;
 `buildProfileCss()` emits one stylesheet where **every selector is prefixed with
-`.vessel-profile`**. Users therefore cannot write CSS, target application
+`.null-profile`**. Users therefore cannot write CSS, target application
 chrome, or exfiltrate anything. `tests/profile-config.test.ts` asserts both the
 injection resistance of the schema and the scoping of the generated CSS.
 

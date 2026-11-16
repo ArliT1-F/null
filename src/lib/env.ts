@@ -28,14 +28,14 @@ const int = (fallback: number, min: number, max: number) =>
 const schema = z.object({
   NODE_ENV: z.enum(["development", "test", "production"]).default("development"),
   APP_URL: z.string().url().default("http://localhost:3000"),
-  APP_NAME: z.string().min(1).default("Vessel"),
+  APP_NAME: z.string().min(1).default("null"),
 
   DATABASE_URL: z.string().min(1),
 
   AUTH_SECRET: z.string().min(32, "AUTH_SECRET must be at least 32 characters"),
   APP_ENCRYPTION_KEY: z.string().min(16, "APP_ENCRYPTION_KEY is required for token encryption"),
 
-  SESSION_COOKIE_NAME: z.string().min(1).default("vessel_session"),
+  SESSION_COOKIE_NAME: z.string().min(1).default("null_session"),
   SESSION_TTL_DAYS: int(30, 1, 365),
 
   STORAGE_DRIVER: z.enum(["local", "s3"]).default("local"),
@@ -61,7 +61,7 @@ const schema = z.object({
   S3_PUBLIC_BASE_URL: z.string().url().optional().or(z.literal("")),
 
   MAIL_DRIVER: z.enum(["console", "smtp"]).default("console"),
-  MAIL_FROM: z.string().default("Vessel <no-reply@localhost>"),
+  MAIL_FROM: z.string().default("null <no-reply@localhost>"),
   SMTP_HOST: z.string().optional(),
   SMTP_PORT: int(587, 1, 65535),
   SMTP_USER: z.string().optional(),
@@ -108,7 +108,7 @@ function load() {
 
   return {
     ...env,
-    MEDIA_ROOT: env.MEDIA_ROOT ?? (isProd ? "/srv/vessel/media" : "media"),
+    MEDIA_ROOT: env.MEDIA_ROOT ?? (isProd ? "/srv/null/media" : "media"),
     isProduction: isProd,
     isDevelopment: env.NODE_ENV === "development",
     isTest: env.NODE_ENV === "test",

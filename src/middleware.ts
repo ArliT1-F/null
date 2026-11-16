@@ -15,7 +15,7 @@ import { NextResponse, type NextRequest } from "next/server";
 const PROTECTED_PREFIXES = ["/dashboard"];
 const AUTH_PAGES = ["/login", "/register"];
 
-const SESSION_COOKIE = process.env.SESSION_COOKIE_NAME ?? "vessel_session";
+const SESSION_COOKIE = process.env.SESSION_COOKIE_NAME ?? "null_session";
 
 export function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl;

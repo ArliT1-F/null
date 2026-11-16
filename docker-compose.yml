@@ -1,5 +1,5 @@
 # ---------------------------------------------------------------------------
-# Vessel — base compose definition
+# null — base compose definition
 #
 # This file defines the application and its single PostgreSQL instance. It is
 # always combined with an environment-specific overlay:
@@ -11,22 +11,22 @@
 # production overlays never do.
 # ---------------------------------------------------------------------------
 
-name: vessel
+name: null
 
 services:
   db:
     image: postgres:16-alpine
     restart: unless-stopped
     environment:
-      POSTGRES_USER: ${POSTGRES_USER:-vessel}
+      POSTGRES_USER: ${POSTGRES_USER:-null}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in your env file}
-      POSTGRES_DB: ${POSTGRES_DB:-vessel}
+      POSTGRES_DB: ${POSTGRES_DB:-null}
       # Modest defaults sized for a low-RAM home server.
       PGDATA: /var/lib/postgresql/data/pgdata
     volumes:
       - db_data:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-vessel} -d ${POSTGRES_DB:-vessel}"]
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-null} -d ${POSTGRES_DB:-null}"]
       interval: 10s
       timeout: 5s
       retries: 10
@@ -57,15 +57,15 @@ services:
         condition: service_healthy
     environment:
       NODE_ENV: production
-      DATABASE_URL: postgresql://${POSTGRES_USER:-vessel}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB:-vessel}
+      DATABASE_URL: postgresql://${POSTGRES_USER:-null}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB:-null}
       APP_URL: ${APP_URL:?set APP_URL}
-      APP_NAME: ${APP_NAME:-Vessel}
+      APP_NAME: ${APP_NAME:-null}
       AUTH_SECRET: ${AUTH_SECRET:?set AUTH_SECRET}
       APP_ENCRYPTION_KEY: ${APP_ENCRYPTION_KEY:?set APP_ENCRYPTION_KEY}
-      SESSION_COOKIE_NAME: ${SESSION_COOKIE_NAME:-vessel_session}
+      SESSION_COOKIE_NAME: ${SESSION_COOKIE_NAME:-null_session}
       SESSION_TTL_DAYS: ${SESSION_TTL_DAYS:-30}
       STORAGE_DRIVER: ${STORAGE_DRIVER:-local}
-      MEDIA_ROOT: /srv/vessel/media
+      MEDIA_ROOT: /srv/null/media
       MEDIA_PUBLIC_PREFIX: /api/media
       MAX_UPLOAD_MB: ${MAX_UPLOAD_MB:-12}
       S3_ENDPOINT: ${S3_ENDPOINT:-}
@@ -75,7 +75,7 @@ services:
       S3_SECRET_ACCESS_KEY: ${S3_SECRET_ACCESS_KEY:-}
       S3_PUBLIC_BASE_URL: ${S3_PUBLIC_BASE_URL:-}
       MAIL_DRIVER: ${MAIL_DRIVER:-console}
-      MAIL_FROM: ${MAIL_FROM:-Vessel <no-reply@localhost>}
+      MAIL_FROM: ${MAIL_FROM:-null <no-reply@localhost>}
       SMTP_HOST: ${SMTP_HOST:-}
       SMTP_PORT: ${SMTP_PORT:-587}
       SMTP_USER: ${SMTP_USER:-}
@@ -86,7 +86,7 @@ services:
       FEATURE_BILLING: ${FEATURE_BILLING:-false}
       FEATURE_INTEGRATIONS: ${FEATURE_INTEGRATIONS:-false}
     volumes:
-      - media_data:/srv/vessel/media
+      - media_data:/srv/null/media
     networks: [internal]
     # Bound to loopback only: the tunnel (or a local reverse proxy) is the only
     # thing that should reach the app in production.

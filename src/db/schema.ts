@@ -1,5 +1,5 @@
 /**
- * Vessel — database schema (Drizzle ORM / PostgreSQL).
+ * null — database schema (Drizzle ORM / PostgreSQL).
  *
  * Modular monolith: one database, one schema, clear module ownership.
  * Core business data is structured and constrained. JSONB is reserved for

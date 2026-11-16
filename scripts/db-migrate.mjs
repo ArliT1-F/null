@@ -24,7 +24,7 @@ if (!url) {
 
 const migrationsFolder = process.env.MIGRATIONS_DIR ?? "./src/db/migrations";
 
-const pool = new Pool({ connectionString: url, max: 1, application_name: "vessel-migrate" });
+const pool = new Pool({ connectionString: url, max: 1, application_name: "null-migrate" });
 
 try {
   const started = Date.now();

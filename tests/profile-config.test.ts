@@ -63,7 +63,7 @@ describe("buildProfileCss", () => {
     const selectors = css.match(/(^|})\s*([^{}@]+)\{/g) ?? [];
     const offenders = selectors
       .map((s) => s.replace(/^}|{/g, "").trim())
-      .filter((s) => s.length > 0 && !s.includes(".vessel-profile") && !s.startsWith("from") && !s.startsWith("to") && !s.startsWith("100%") && !s.startsWith("@"));
+      .filter((s) => s.length > 0 && !s.includes(".null-profile") && !s.startsWith("from") && !s.startsWith("to") && !s.startsWith("100%") && !s.startsWith("@"));
     expect(offenders).toEqual([]);
   });
 
@@ -74,6 +74,6 @@ describe("buildProfileCss", () => {
 
   it("emits no animation when the user disables it", () => {
     const css = buildProfileCss(configWithTheme({ effects: { animatedBackground: false } }));
-    expect(css).not.toContain("animation:vessel-drift");
+    expect(css).not.toContain("animation:null-drift");
   });
 });

@@ -1,6 +1,6 @@
 # API
 
-Vessel exposes a small HTTP surface plus server actions. Everything mutating goes
+null exposes a small HTTP surface plus server actions. Everything mutating goes
 through the application's own origin and requires a session cookie.
 
 There is no public developer API in V1 (see [ROADMAP.md](ROADMAP.md), V5).
@@ -9,7 +9,7 @@ There is no public developer API in V1 (see [ROADMAP.md](ROADMAP.md), V5).
 
 - All JSON responses use `{ ok: boolean, ... }`; errors use
   `{ ok: false, error: string }` with an appropriate status code.
-- Authentication is the `vessel_session` httpOnly cookie.
+- Authentication is the `null_session` httpOnly cookie.
 - Rate limits return `429` with a `Retry-After` header.
 - No API is versioned yet because none is public.
 

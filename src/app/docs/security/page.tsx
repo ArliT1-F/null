@@ -5,7 +5,7 @@ import { SiteHeader } from "@/components/site-header";
 
 export const metadata: Metadata = {
   title: "Security model",
-  description: "How Vessel handles credentials, user content, uploads and authorisation.",
+  description: "How null handles credentials, user content, uploads and authorisation.",
 };
 
 const ITEMS = [
@@ -22,7 +22,7 @@ const ITEMS = [
     title: "User content",
     points: [
       "Profile appearance is stored as validated tokens (hex colours, enums, bounded numbers) — never raw CSS.",
-      "The generated stylesheet is scoped to `.vessel-profile`, so profile styling cannot affect the application UI.",
+      "The generated stylesheet is scoped to `.null-profile`, so profile styling cannot affect the application UI.",
       "Link URLs are restricted to http, https and mailto at write time, blocking javascript: and data: schemes.",
       "No user JavaScript is executed on the application origin, and no iframe or eval path exists in V1.",
     ],

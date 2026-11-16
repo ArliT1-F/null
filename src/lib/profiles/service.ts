@@ -1,4 +1,5 @@
 import "server-only";
+import { diffSnapshots } from "@/lib/profile-diff";
 
 import { and, asc, desc, eq, sql } from "drizzle-orm";
 import { db } from "@/db/client";
@@ -39,6 +40,8 @@ export type PublishedProfile = {
   statusText: string | null;
   config: ProfileConfig;
   links: PublicLink[];
+  /** Visible blocks in render order; full config retains hidden blocks for editing. */
+  blocks: ProfileConfig["blocks"];
   revision: number;
   publishedAt: Date;
 };
@@ -114,6 +117,7 @@ export async function getPublishedProfile(username: string): Promise<PublishedPr
     };
   };
 
+  const config = normalizeProfileConfig(snapshot.config);
   return {
     username: row.user.username,
     usernameDisplay: snapshot.identity?.usernameDisplay ?? row.user.usernameDisplay,
@@ -123,8 +127,9 @@ export async function getPublishedProfile(username: string): Promise<PublishedPr
     headline: snapshot.identity?.headline ?? null,
     location: snapshot.identity?.location ?? null,
     statusText: snapshot.identity?.statusText ?? null,
-    config: normalizeProfileConfig(snapshot.config),
+    config,
     links: (snapshot.links ?? []).filter((l) => l && l.url && l.label),
+    blocks: config.blocks.filter((b) => b.visible),
     revision: row.profile.revision,
     publishedAt: row.profile.publishedAt ?? row.profile.updatedAt,
   };
@@ -456,16 +461,17 @@ export async function restoreVersion(userId: string, versionId: string): Promise
 }
 
 export async function listVersions(profileId: string, limit = 20) {
-  return db
-    .select({
-      id: profileVersions.id,
-      version: profileVersions.version,
-      createdAt: profileVersions.createdAt,
-    })
+  const rows = await db
+    .select({ id: profileVersions.id, version: profileVersions.version,
+      createdAt: profileVersions.createdAt, snapshot: profileVersions.snapshot })
     .from(profileVersions)
     .where(eq(profileVersions.profileId, profileId))
     .orderBy(desc(profileVersions.version))
-    .limit(limit);
+    .limit(limit + 1);
+  return rows.slice(0, limit).map((row, index) => ({
+    id: row.id, version: row.version, createdAt: row.createdAt,
+    changes: diffSnapshots(rows[index + 1]?.snapshot ?? {}, row.snapshot),
+  }));
 }
 
 export async function getVersion(profileId: string, versionId: string) {

@@ -49,7 +49,7 @@ The most important surface, because profiles are user-designed pages.
 | Risk | Mitigation |
 | --- | --- |
 | CSS injection | Appearance is stored as tokens (hex colours, enums, bounded numbers) validated by Zod; raw CSS is never stored |
-| Selector escape | The generated stylesheet prefixes every selector with `.vessel-profile` |
+| Selector escape | The generated stylesheet prefixes every selector with `.null-profile` |
 | XSS in text fields | React escapes all output; no `dangerouslySetInnerHTML` receives user text (only generated CSS and a JSON-LD object built from typed fields) |
 | `javascript:` URLs | Link URLs are restricted to `http`, `https`, `mailto` at write time and rejected again by the test suite |
 | Tabnabbing | External links render with `rel="noopener noreferrer nofollow"` |

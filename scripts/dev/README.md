@@ -8,7 +8,7 @@ against a production database.
 | --- | --- |
 | `dev-seed-demo.ts` | Creates one demo account (`arlit1` / `test-password-123`) with a bio. |
 | `dev-publish-demo.ts` | Adds sample links to that account and publishes version 1. |
-| `dev-session.ts <username>` | Prints a raw session token so `curl -H "Cookie: vessel_session=..."` works. |
+| `dev-session.ts <username>` | Prints a raw session token so `curl -H "Cookie: null_session=..."` works. |
 
 Run them with the project's path aliases and environment:
 

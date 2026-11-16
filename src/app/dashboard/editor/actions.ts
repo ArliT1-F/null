@@ -271,7 +271,7 @@ export async function applyAvatar(url: string | null): Promise<ActionResult> {
 // Version history
 // ---------------------------------------------------------------------------
 
-export type VersionSummary = { id: string; version: number; createdAt: string };
+export type VersionSummary = { id: string; version: number; createdAt: string; changes: import("@/lib/profile-diff").RevisionChange[] };
 
 /**
  * Returns the real version history.
@@ -290,6 +290,7 @@ export async function listVersionsAction(): Promise<ActionResult<{ versions: Ver
           id: row.id,
           version: row.version,
           createdAt: row.createdAt.toISOString(),
+          changes: row.changes,
         })),
       },
     };

@@ -28,7 +28,7 @@ export const THEME_SEEDS: ThemeSeed[] = [
     slug: "aurora",
     name: "Aurora",
     category: "Dark",
-    description: "Deep midnight blues with a green horizon. The default Vessel look.",
+    description: "Deep midnight blues with a green horizon. The default null look.",
     sortOrder: 10,
     tokens: {
       background: { type: "gradient", gradientFrom: "#101a2b", gradientTo: "#0a2a22", gradientAngle: 140 },
@@ -241,7 +241,7 @@ async function seedAdmin() {
   }
 
   const email = process.env.SEED_ADMIN_EMAIL ?? "admin@localhost";
-  const password = process.env.SEED_ADMIN_PASSWORD ?? "vessel-admin-2026";
+  const password = process.env.SEED_ADMIN_PASSWORD ?? "null-admin-2026";
   const username = process.env.SEED_ADMIN_USERNAME ?? "admin";
 
   const existing = await db.select({ id: users.id }).from(users).where(eq(users.email, email)).limit(1);

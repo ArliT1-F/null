@@ -61,7 +61,7 @@ export default async function EditorPage() {
       }))}
       themes={themes.map((t) => ({ slug: t.slug, name: t.name, category: t.category, tokens: t.tokens }))}
       activeThemeSlug={data.profile.themeSlug}
-      versions={versions.map((v) => ({ id: v.id, version: v.version, createdAt: v.createdAt.toISOString() }))}
+      versions={versions.map((v) => ({ id: v.id, version: v.version, createdAt: v.createdAt.toISOString(), changes: v.changes }))}
       publishedAt={data.profile.publishedAt?.toISOString() ?? null}
       revision={data.profile.revision}
       draftDirty={draftDirty}
