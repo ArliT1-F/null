@@ -21,6 +21,25 @@ export class LocalStorageProvider implements StorageProvider {
     this.root = path.resolve(root);
   }
 
+  /**
+   * Turns a filesystem failure into something an operator can act on.
+   *
+   * The raw error surfaces deep inside an upload as `EACCES: mkdir
+   * '/srv/vessel'`, which says nothing about which knob to turn. The usual
+   * cause is a `MEDIA_ROOT` copied from the Docker template (absolute
+   * /srv/vessel/media) on a machine where that path is not writable.
+   */
+  private unusable(cause: unknown, full: string): Error {
+    const code = (cause as NodeJS.ErrnoException)?.code ?? "unknown";
+    return new Error(
+      `MEDIA_ROOT is not writable: ${code} while writing "${full}" (root: ${this.root}). ` +
+        "Create that directory and make it writable by the app user, or point MEDIA_ROOT at a " +
+        "writable path. Relative paths resolve from the working directory, so `MEDIA_ROOT=./media` " +
+        "is the usual development setting; Docker sets /srv/vessel/media for you.",
+      { cause },
+    );
+  }
+
   private resolve(key: string): string {
     assertSafeKey(key);
     const full = path.resolve(this.root, key);
@@ -33,11 +52,17 @@ export class LocalStorageProvider implements StorageProvider {
 
   async put(key: string, body: Buffer, contentType: string): Promise<StoredObject> {
     const full = this.resolve(key);
-    await fs.mkdir(path.dirname(full), { recursive: true });
-    // Write then rename so a partial upload never becomes visible.
     const tmp = `${full}.${Date.now()}.tmp`;
-    await fs.writeFile(tmp, body);
-    await fs.rename(tmp, full);
+    try {
+      await fs.mkdir(path.dirname(full), { recursive: true });
+      // Write then rename so a partial upload never becomes visible.
+      await fs.writeFile(tmp, body);
+      await fs.rename(tmp, full);
+    } catch (error) {
+      // Never leave a half-written upload behind.
+      await fs.rm(tmp, { force: true }).catch(() => {});
+      throw this.unusable(error, full);
+    }
     return { key, size: body.byteLength, contentType };
   }
 
