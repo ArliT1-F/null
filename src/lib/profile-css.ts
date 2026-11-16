@@ -1,3 +1,4 @@
+import { backgroundImageFor } from "@/lib/background-image";
 import type { ProfileConfig } from "@/lib/profile-config";
 import { themeToCssVars } from "@/lib/profile-config";
 
@@ -33,9 +34,17 @@ export function buildProfileCss(config: ProfileConfig): string {
 
   const { effects, buttons } = config.theme;
   const { layout } = config;
+  const backgroundImage = backgroundImageFor(config.theme.background);
 
   return [
-    `${PROFILE_SCOPE}{${decls};min-height:100dvh;display:flex;align-items:center;justify-content:center;padding:40px 20px;background:var(--p-bg);color:var(--p-text);font-family:var(--p-font);font-size:var(--p-base-size);line-height:var(--p-leading);letter-spacing:var(--p-tracking);-webkit-font-smoothing:antialiased;}`,
+    `${PROFILE_SCOPE}{${decls};position:relative;overflow:hidden;min-height:100dvh;display:flex;align-items:center;justify-content:center;padding:40px 20px;background:var(--p-bg);color:var(--p-text);font-family:var(--p-font);font-size:var(--p-base-size);line-height:var(--p-leading);letter-spacing:var(--p-tracking);-webkit-font-smoothing:antialiased;}`,
+    // The image layer is a child element, painted above the scope's own
+    // `--p-bg` fill and below `.vp-card`. It has to be a real element rather
+    // than ::before/::after because both of those are taken by the effect
+    // layers. `--p-bg-blur`/`--p-bg-dim` come from the validated theme tokens.
+    backgroundImage
+      ? `${PROFILE_SCOPE} .vp-bg{position:absolute;inset:0;z-index:0;pointer-events:none;background-image:linear-gradient(rgba(0,0,0,var(--p-bg-dim)),rgba(0,0,0,var(--p-bg-dim))),url("${backgroundImage}");background-size:cover;background-position:center;background-repeat:no-repeat;filter:blur(var(--p-bg-blur));transform:scale(1.06);}`
+      : "",
     effects.animatedBackground
       ? `${PROFILE_SCOPE}::before{content:"";position:fixed;inset:-20%;z-index:0;pointer-events:none;background:radial-gradient(45% 40% at 25% 25%,color-mix(in srgb,var(--p-accent) 26%,transparent),transparent 70%),radial-gradient(40% 38% at 78% 74%,color-mix(in srgb,var(--p-accent) 16%,transparent),transparent 70%);filter:blur(40px);animation:vessel-drift 22s ease-in-out infinite alternate;}@media (prefers-reduced-motion:reduce){${PROFILE_SCOPE}::before{animation:none;}}`
       : "",

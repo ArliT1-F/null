@@ -3,6 +3,7 @@ import { unstable_cache } from "next/cache";
 import { notFound } from "next/navigation";
 import { ProfileView, type RenderProfile } from "@/components/profile/profile-renderer";
 import { env } from "@/lib/env";
+import { backgroundImageFor } from "@/lib/background-image";
 import { buildProfileCss, pageBackground } from "@/lib/profile-css";
 import { getPublishedProfile } from "@/lib/profiles/service";
 import { rehydrateNullableProfileDates } from "@/lib/profiles/serialize";
@@ -144,7 +145,7 @@ export default async function ProfilePage({ params }: PageProps) {
         }}
       />
       <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd) }} />
-      <ProfileView profile={render} track />
+      <ProfileView profile={render} backgroundUrl={backgroundImageFor(profile.config.theme.background)} track />
     </>
   );
 }
