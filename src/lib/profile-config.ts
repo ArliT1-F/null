@@ -8,9 +8,16 @@ import { z } from "zod";
  *
  * Rules enforced here:
  *  - Every colour is a strictly validated CSS colour token, never raw CSS.
- *  - Every media reference is a media asset id owned by the profile's user.
+ *  - Every media reference is a media URL owned by the profile's user (same-origin
+ *    `/api/media/...` or https) — validated again at render time.
  *  - Unknown keys are stripped, so the stored config can never grow into an
  *    unvalidated blob that the renderer trusts.
+ *  - Blocks never store raw HTML, CSS or JavaScript. Text is plain text;
+ *    embeds are allowlisted https URLs rendered in a sandboxed iframe.
+ *
+ * Config version 2 adds component blocks + per-breakpoint overrides. Version 1
+ * configs (theme + layout only) load as v2 with empty blocks — the upgrade is
+ * lossless and needs no database migration (blocks live in `draft_config` JSONB).
  */
 
 const HEX_COLOR = /^#[0-9a-fA-F]{3,8}$/;
@@ -28,6 +35,176 @@ export const RADIUS_OPTIONS = ["none", "sm", "md", "lg", "xl", "full"] as const;
 export const BACKGROUND_TYPES = ["solid", "gradient", "image"] as const;
 export const BUTTON_STYLES = ["solid", "outline", "soft", "glass"] as const;
 export const CARD_ALIGNMENTS = ["center", "left"] as const;
+
+export const BLOCK_TYPES = ["text", "image", "gallery", "divider", "embed"] as const;
+export const BLOCK_TYPE_LABELS: Record<(typeof BLOCK_TYPES)[number], string> = {
+  text: "Text",
+  image: "Image",
+  gallery: "Gallery",
+  divider: "Divider",
+  embed: "Embed",
+};
+
+export const MAX_BLOCKS = 24;
+export const MAX_GALLERY_IMAGES = 6;
+
+/** Hosts whose embeds may be rendered. Everything else is rejected at write time. */
+export const EMBED_HOSTS = [
+  "youtube.com",
+  "www.youtube.com",
+  "youtube-nocookie.com",
+  "www.youtube-nocookie.com",
+  "youtu.be",
+  "vimeo.com",
+  "player.vimeo.com",
+  "open.spotify.com",
+  "soundcloud.com",
+] as const;
+
+const blockId = z
+  .string()
+  .min(1)
+  .max(64)
+  .regex(/^[a-zA-Z0-9_-]+$/, "Block id must be alphanumeric");
+
+/** Media URL: same-origin path or https. Rejects javascript:/data: outright. */
+const mediaUrl = z
+  .string()
+  .max(512)
+  .refine((value) => {
+    const v = value.trim();
+    if (!v) return false;
+    if (v.startsWith("/")) return !v.startsWith("//") && !/[\s"'()\\;{}<>]/.test(v);
+    try {
+      const parsed = new URL(v);
+      return parsed.protocol === "https:" && !/[\s"'()\\;{}<>]/.test(v);
+    } catch {
+      return false;
+    }
+  }, "Use an https image URL or an uploaded media file");
+
+const embedUrl = z
+  .string()
+  .max(2048)
+  .refine((value) => isEmbedAllowed(value), "Only YouTube, Vimeo, Spotify and SoundCloud embeds are allowed");
+
+export function isEmbedAllowed(value: string): boolean {
+  try {
+    const parsed = new URL(value.trim());
+    if (parsed.protocol !== "https:" || parsed.username || parsed.password || parsed.port) return false;
+    const host = parsed.hostname.toLowerCase();
+    return (EMBED_HOSTS as readonly string[]).includes(host);
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Normalises a user-supplied embed URL to the iframe `src`.
+ * Converts watch/share URLs to embed URLs where the provider supports it.
+ * Returns null when the URL is not allowlisted.
+ */
+export function embedUrlFor(value: string): string | null {
+  const raw = value.trim();
+  if (!isEmbedAllowed(raw)) return null;
+  try {
+    const parsed = new URL(raw);
+    const host = parsed.hostname.toLowerCase();
+    if (host === "youtu.be") {
+      const id = parsed.pathname.replace(/^\//, "").split("/")[0];
+      return id ? `https://www.youtube-nocookie.com/embed/${encodeURIComponent(id)}` : null;
+    }
+    if (host === "youtube.com" || host === "www.youtube.com") {
+      const v = parsed.searchParams.get("v");
+      if (v) return `https://www.youtube-nocookie.com/embed/${encodeURIComponent(v)}`;
+      if (parsed.pathname.startsWith("/embed/")) return raw;
+      if (parsed.pathname.startsWith("/shorts/")) {
+        const id = parsed.pathname.split("/")[2];
+        return id ? `https://www.youtube-nocookie.com/embed/${encodeURIComponent(id)}` : null;
+      }
+      return null;
+    }
+    if (host === "vimeo.com") {
+      const id = parsed.pathname.replace(/^\//, "").split("/")[0];
+      return id ? `https://player.vimeo.com/video/${encodeURIComponent(id)}` : null;
+    }
+    if (host === "open.spotify.com") {
+      const match = parsed.pathname.match(/^\/(?:embed\/)?(track|album|playlist|episode|show|artist)\/([a-zA-Z0-9]+)$/);
+      return match ? `https://open.spotify.com/embed/${match[1]}/${match[2]}` : null;
+    }
+    if (host === "soundcloud.com") return `https://w.soundcloud.com/player/?url=${encodeURIComponent(parsed.origin + parsed.pathname)}`;
+    if (host === "player.vimeo.com") return /^\/video\/\d+$/.test(parsed.pathname) ? parsed.origin + parsed.pathname : null;
+    if (host === "youtube-nocookie.com" || host === "www.youtube-nocookie.com") return /^\/embed\/[a-zA-Z0-9_-]+$/.test(parsed.pathname) ? parsed.origin + parsed.pathname : null;
+    return null;
+  } catch {
+    return null;
+  }
+}
+
+const textBlockProps = z.object({
+  content: z.string().max(2000).default(""),
+  align: z.enum(["left", "center", "right"]).default("left"),
+  size: z.enum(["sm", "md", "lg"]).default("md"),
+});
+
+const imageBlockProps = z.object({
+  src: z.union([z.literal(""), mediaUrl]).default(""),
+  alt: z.string().max(200).default(""),
+  caption: z.string().max(300).default(""),
+  radius: z.enum(RADIUS_OPTIONS).default("lg"),
+});
+
+const galleryImage = z.object({
+  src: mediaUrl,
+  alt: z.string().max(200).default(""),
+});
+
+const galleryBlockProps = z.object({
+  images: z.array(galleryImage).max(MAX_GALLERY_IMAGES).default([]),
+  columns: z.number().int().min(1).max(3).default(2),
+});
+
+const dividerBlockProps = z.object({
+  style: z.enum(["line", "dots", "spacing"]).default("line"),
+  spacing: z.number().int().min(0).max(64).default(16),
+});
+
+const embedBlockProps = z.object({
+  url: z.union([z.literal(""), embedUrl]).default(""),
+  title: z.string().max(200).default(""),
+});
+
+const blockBase = z.object({
+  id: blockId,
+  visible: z.boolean().default(true),
+  locked: z.boolean().default(false),
+  groupId: z
+    .string()
+    .max(64)
+    .regex(/^[a-zA-Z0-9_-]*$/, "Group id must be alphanumeric")
+    .nullable()
+    .default(null),
+});
+
+export const blockSchema = z.discriminatedUnion("type", [
+  blockBase.extend({ type: z.literal("text"), props: textBlockProps.default({}) }),
+  blockBase.extend({ type: z.literal("image"), props: imageBlockProps.default({}) }),
+  blockBase.extend({ type: z.literal("gallery"), props: galleryBlockProps.default({}) }),
+  blockBase.extend({ type: z.literal("divider"), props: dividerBlockProps.default({}) }),
+  blockBase.extend({ type: z.literal("embed"), props: embedBlockProps.default({}) }),
+]);
+
+export type ProfileBlock = z.infer<typeof blockSchema>;
+
+export function createBlockId(): string {
+  // Client-generated ids are validated by blockId; crypto.randomUUID is
+  // available in browsers and Node. Fall back to a timestamp suffix.
+  try {
+    return crypto.randomUUID().slice(0, 22);
+  } catch {
+    return `b${Date.now().toString(36)}${Math.floor(Math.random() * 1e6).toString(36)}`;
+  }
+}
 
 export const themeSchema = z.object({
   background: z
@@ -101,15 +278,44 @@ export const layoutSchema = z.object({
   showViewCount: z.boolean().default(false),
 });
 
+/** Partial layout overrides per breakpoint. Absent fields inherit the base layout. */
+const breakpointOverrideSchema = z.object({
+  width: z.number().int().min(320).max(760).optional(),
+  gap: z.number().int().min(4).max(32).optional(),
+  padding: z.number().int().min(8).max(64).optional(),
+});
+
+export const breakpointsSchema = z.object({
+  mobile: breakpointOverrideSchema.default({}),
+  tablet: breakpointOverrideSchema.default({}),
+});
+
 export const profileConfigSchema = z.object({
-  version: z.literal(1).default(1),
+  // Any stored version (1 or 2) normalises to 2. Version 1 simply has no
+  // blocks/breakpoints, which default to empty.
+  version: z.preprocess(() => 2, z.literal(2).default(2)),
   theme: themeSchema.default({}),
   layout: layoutSchema.default({}),
+  blocks: z
+    .array(blockSchema)
+    .max(MAX_BLOCKS)
+    .default([])
+    .superRefine((blocks, ctx) => {
+      const seen = new Set<string>();
+      for (const block of blocks) {
+        if (seen.has(block.id)) {
+          ctx.addIssue({ code: z.ZodIssueCode.custom, message: "Duplicate block id", path: [blocks.indexOf(block)] });
+        }
+        seen.add(block.id);
+      }
+    }),
+  breakpoints: breakpointsSchema.default({}),
 });
 
 export type ProfileConfig = z.infer<typeof profileConfigSchema>;
 export type ThemeTokens = ProfileConfig["theme"];
 export type LayoutTokens = ProfileConfig["layout"];
+export type BreakpointOverrides = ProfileConfig["breakpoints"];
 
 export const DEFAULT_PROFILE_CONFIG: ProfileConfig = profileConfigSchema.parse({});
 
@@ -139,6 +345,21 @@ function deepMerge<T>(defaults: T, input: unknown): T {
   return out as T;
 }
 
+/** Validates blocks one by one: invalid blocks are dropped, valid ones kept. */
+function salvageBlocks(input: unknown): ProfileBlock[] {
+  if (!Array.isArray(input)) return [];
+  const out: ProfileBlock[] = [];
+  const seen = new Set<string>();
+  for (const raw of input.slice(0, MAX_BLOCKS)) {
+    const parsed = blockSchema.safeParse(raw);
+    if (!parsed.success) continue;
+    if (seen.has(parsed.data.id)) continue;
+    seen.add(parsed.data.id);
+    out.push(parsed.data);
+  }
+  return out;
+}
+
 export function normalizeProfileConfig(input: unknown): ProfileConfig {
   const parsed = profileConfigSchema.safeParse(input);
   if (parsed.success) return parsed.data;
@@ -150,11 +371,14 @@ export function normalizeProfileConfig(input: unknown): ProfileConfig {
 
   const theme = themeSchema.safeParse(merged.theme);
   const layout = layoutSchema.safeParse(merged.layout);
+  const breakpoints = breakpointsSchema.safeParse(merged.breakpoints);
 
   return {
-    version: 1,
+    version: 2,
     theme: theme.success ? theme.data : salvageSection(themeSchema, DEFAULT_PROFILE_CONFIG.theme, merged.theme),
     layout: layout.success ? layout.data : DEFAULT_PROFILE_CONFIG.layout,
+    blocks: salvageBlocks(isRecord(input) ? (input as AnyRecord).blocks : undefined),
+    breakpoints: breakpoints.success ? breakpoints.data : DEFAULT_PROFILE_CONFIG.breakpoints,
   };
 }
 
@@ -267,5 +491,5 @@ export function themeToCssVars(theme: ThemeTokens, layout: LayoutTokens): Record
 
 /** Applies a theme's partial token set over the defaults (used by the seeder + UI). */
 export function configWithTheme(tokens: unknown): ProfileConfig {
-  return normalizeProfileConfig({ version: 1, theme: tokens });
+  return normalizeProfileConfig({ version: 2, theme: tokens });
 }

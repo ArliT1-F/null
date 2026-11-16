@@ -7,7 +7,7 @@ import { Icon } from "@/components/ui";
 
 export const metadata: Metadata = {
   title: "Documentation",
-  description: "How Vessel works and how to run it yourself.",
+  description: "How null works and how to run it yourself.",
 };
 
 const SECTIONS = [
@@ -44,9 +44,9 @@ export default function DocsPage() {
 
       <main className="mx-auto max-w-4xl px-4 py-14 sm:px-6">
         <p className="eyebrow">Documentation</p>
-        <h1 className="mt-2 font-display text-3xl font-semibold tracking-[-0.02em]">Running Vessel</h1>
+        <h1 className="mt-2 font-display text-3xl font-semibold tracking-[-0.02em]">Running null</h1>
         <p className="mt-3 max-w-2xl text-[15px] leading-relaxed text-ink-600 dark:text-ink-300">
-          Vessel is a single Next.js application with one PostgreSQL database. The same image runs on
+          null is a single Next.js application with one PostgreSQL database. The same image runs on
           a laptop, a home server and a cloud VPS. Everything below describes what the code actually
           does.
         </p>
@@ -76,7 +76,7 @@ export default function DocsPage() {
             stack is two containers: the app and the database.
           </p>
           <pre className="mt-4 overflow-x-auto rounded-xl border border-ink-200 bg-ink-950 p-4 text-[12.5px] leading-relaxed text-ink-100 dark:border-white/10">
-            <code>{`git clone <repo> vessel && cd vessel
+            <code>{`git clone <repo> null && cd null
 cp .env.example .env          # set AUTH_SECRET and APP_ENCRYPTION_KEY
 npm install
 npm run db:migrate             # apply SQL migrations

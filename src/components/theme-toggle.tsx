@@ -20,7 +20,7 @@ export function ThemeToggle({ className = "" }: { className?: string }) {
     const next = !document.documentElement.classList.contains("dark");
     document.documentElement.classList.toggle("dark", next);
     try {
-      localStorage.setItem("vessel-theme", next ? "dark" : "light");
+      localStorage.setItem("null-theme", next ? "dark" : "light");
     } catch {
       /* storage may be blocked; the toggle still works for this page view */
     }

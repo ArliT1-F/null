@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # ---------------------------------------------------------------------------
-# Vessel — restore script
+# null — restore script
 #
 # Usage:
 #   ./scripts/restore.sh backups/db-20260101T030000Z.sql.gz [media-archive.tar.gz]
@@ -14,16 +14,16 @@
 #
 # Environment:
 #   COMPOSE_FILE   compose file used to reach the db (default docker-compose.yml)
-#   POSTGRES_USER  database user (default vessel)
-#   POSTGRES_DB    database name (default vessel)
+#   POSTGRES_USER  database user (default null)
+#   POSTGRES_DB    database name (default null)
 # ---------------------------------------------------------------------------
 set -Eeuo pipefail
 
 DB_ARCHIVE="${1:-}"
 MEDIA_ARCHIVE="${2:-}"
 COMPOSE_FILE="${COMPOSE_FILE:-docker-compose.yml}"
-POSTGRES_USER="${POSTGRES_USER:-vessel}"
-POSTGRES_DB="${POSTGRES_DB:-vessel}"
+POSTGRES_USER="${POSTGRES_USER:-null}"
+POSTGRES_DB="${POSTGRES_DB:-null}"
 
 log() { printf '[restore] %s\n' "$*"; }
 fail() { printf '[restore] ERROR: %s\n' "$*" >&2; exit 1; }

@@ -1,14 +1,14 @@
-# Vessel
+# null
 
 A customizable personal identity platform. Claim `yourdomain.com/yourname`, design
 it visually, and publish only when it is exactly right.
 
-Vessel is a **modular monolith**: one Next.js application, one PostgreSQL
+null is a **modular monolith**: one Next.js application, one PostgreSQL
 database, one storage interface. The same container image runs on a laptop, a
 home desktop behind Cloudflare Tunnel, and a cloud VPS.
 
 ```
-Visitor ──▶ Cloudflare ──▶ Tunnel ──▶ Vessel (Next.js) ──┬─▶ PostgreSQL
+Visitor ──▶ Cloudflare ──▶ Tunnel ──▶ null (Next.js) ──┬─▶ PostgreSQL
                                                         └─▶ Media (local disk or S3/R2)
 ```
 

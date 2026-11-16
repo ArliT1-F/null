@@ -1,5 +1,5 @@
 # ---------------------------------------------------------------------------
-# Vessel — self-hosted production overlay (home desktop + Cloudflare Tunnel)
+# null — self-hosted production overlay (home desktop + Cloudflare Tunnel)
 #
 #   docker compose -f docker-compose.yml -f docker-compose.selfhosted.yml up -d
 #

@@ -12,7 +12,7 @@ import { normalizeProfileConfig } from "@/lib/profile-config";
 
 export const metadata: Metadata = {
   title: "Explore profiles",
-  description: "Recently published Vessel profiles.",
+  description: "Recently published null profiles.",
 };
 
 export const revalidate = 60;

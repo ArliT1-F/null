@@ -36,6 +36,7 @@ import {
   TextControl,
   ToggleControl,
 } from "./controls";
+import { BlocksPanel } from "./blocks-panel";
 import { useEditorStore } from "./editor-store";
 import {
   addLink,
@@ -56,7 +57,7 @@ type LinkRow = { id: string; label: string; url: string; icon: string; highlight
 
 type ThemeOption = { slug: string; name: string; category: string; tokens: Record<string, unknown> };
 
-type VersionRow = { id: string; version: number; createdAt: string };
+type VersionRow = { id: string; version: number; createdAt: string; changes: import("@/lib/profile-diff").RevisionChange[] };
 
 export type EditorProps = {
   username: string;
@@ -80,7 +81,7 @@ export type EditorProps = {
   draftDirty: boolean;
 };
 
-type Panel = "design" | "identity" | "links" | "publish";
+type Panel = "blocks" | "design" | "identity" | "links" | "publish";
 
 export function EditorClient(props: EditorProps) {
   const store = useEditorStore(props.initialConfig);
@@ -181,10 +182,10 @@ export function EditorClient(props: EditorProps) {
       <div className="relative min-h-[520px] overflow-y-auto">
         <div className="relative">
           {/*
-            The background image layer is rendered *inside* `.vessel-profile` by
+            The background image layer is rendered *inside* `.null-profile` by
             the profile stylesheet below (`buildLiveCss`), i.e. by the same code
             path as the public page. An earlier version drew it as a sibling of
-            the profile, which painted it underneath `.vessel-profile`'s opaque
+            the profile, which painted it underneath `.null-profile`'s opaque
             `--p-bg` fill and made every image invisible.
           */}
           <ProfileView
@@ -198,11 +199,12 @@ export function EditorClient(props: EditorProps) {
               location: identity.location || null,
               statusText: identity.statusText || null,
               links: visibleLinks,
+              blocks: store.draft.blocks,
               showLocation: store.draft.layout.showLocation,
               showStatus: store.draft.layout.showStatus,
               showAvatar: store.draft.layout.showAvatar,
               entrance: "none",
-              appName: "Vessel",
+              appName: "null",
             }}
             backgroundUrl={backgroundUrl}
           />
@@ -278,9 +280,10 @@ export function EditorClient(props: EditorProps) {
         {/* Left: inspector ---------------------------------------------- */}
         <div className="order-2 lg:order-1">
           <div className="overflow-hidden rounded-2xl border border-ink-200/70 bg-white dark:border-white/10 dark:bg-white/[0.02]">
-            <div className="grid grid-cols-4 border-b border-ink-200/70 dark:border-white/10" role="tablist">
+            <div className="grid grid-cols-5 border-b border-ink-200/70 dark:border-white/10" role="tablist">
               {(
                 [
+                  { key: "blocks", label: "Blocks", icon: LayoutTemplate },
                   { key: "design", label: "Design", icon: Palette },
                   { key: "identity", label: "Identity", icon: Pencil },
                   { key: "links", label: "Links", icon: Link2 },
@@ -306,6 +309,7 @@ export function EditorClient(props: EditorProps) {
             </div>
 
             <div className="max-h-[calc(100dvh-14rem)] overflow-y-auto">
+              {panel === "blocks" && <BlocksPanel store={store} />}
               {panel === "design" && (
                 <DesignPanel
                   store={store}
@@ -1105,6 +1109,14 @@ function PublishPanel({
               <li key={version.id} className="flex items-center justify-between rounded-lg border border-ink-200 px-2.5 py-2 text-[11px] dark:border-white/10">
                 <div>
                   <p className="font-medium">Version {version.version}</p>
+                  <details className="mt-1 max-w-[220px] break-words">
+                    <summary className="cursor-pointer">{version.changes.length} changes vs previous revision</summary>
+                    <ul className="mt-2 space-y-2">{version.changes.map((change) => <li key={change.path}>
+                      <strong>{change.path || "snapshot"}</strong>
+                      <p className="text-red-500">− {change.before}</p>
+                      <p className="text-brand-600 dark:text-brand-300">+ {change.after}</p>
+                    </li>)}</ul>
+                  </details>
                   <p className="text-[10px] text-ink-400">
                     {new Date(version.createdAt).toLocaleString("en", { dateStyle: "medium", timeStyle: "short" })}
                   </p>

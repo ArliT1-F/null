@@ -31,10 +31,10 @@ At least one copy must live on a different machine or in object storage.
 ## Taking a backup
 
 ```bash
-cd /srv/vessel
-BACKUP_MEDIA_DIR=/var/lib/docker/volumes/vessel_media_data/_data \
+cd /srv/null
+BACKUP_MEDIA_DIR=/var/lib/docker/volumes/null_media_data/_data \
 BACKUP_DIR=./backups \
-RCLONE_REMOTE=remote:vessel-backups \
+RCLONE_REMOTE=remote:null-backups \
 ./scripts/backup.sh
 ```
 
@@ -71,8 +71,8 @@ directory rather than over the live volume, so you decide when to swap it in.
 
 ```bash
 # Create a scratch database and restore into it — production stays untouched.
-createdb -h 127.0.0.1 -U vessel restore_check
-gunzip -c backups/db-<STAMP>.sql.gz | psql -h 127.0.0.1 -U vessel -d restore_check -v ON_ERROR_STOP=1
+createdb -h 127.0.0.1 -U null restore_check
+gunzip -c backups/db-<STAMP>.sql.gz | psql -h 127.0.0.1 -U null -d restore_check -v ON_ERROR_STOP=1
 
 # Sanity checks
 psql -d restore_check -c "select count(*) from users;"
@@ -119,7 +119,7 @@ Full rebuild:
 
 ```bash
 sudo apt install -y docker.io docker-compose-plugin git rclone
-git clone <repo> /srv/vessel && cd /srv/vessel
+git clone <repo> /srv/null && cd /srv/null
 # restore .env.selfhosted from your secret manager
 docker compose --env-file .env.selfhosted -f docker-compose.yml -f docker-compose.selfhosted.yml up -d db
 ./scripts/restore.sh <db-dump> <media-archive>

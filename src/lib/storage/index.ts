@@ -13,7 +13,7 @@ let provider: StorageProvider | null = null;
 export function mediaRoot(): string {
   const configured = typeof env.MEDIA_ROOT === "string" ? env.MEDIA_ROOT.trim() : "";
   if (configured) return configured;
-  return env.isProduction ? "/srv/vessel/media" : "media";
+  return env.isProduction ? "/srv/null/media" : "media";
 }
 
 /** The active storage backend, chosen purely by configuration. */

@@ -16,7 +16,7 @@ export default function AuthLayout({ children }: { children: React.ReactNode }) 
         <div className="pointer-events-none absolute -right-16 bottom-0 size-80 rounded-full bg-flare-400/15 blur-3xl" />
 
         <div className="relative">
-          <Link href="/" className="inline-flex items-center gap-2 text-lg font-semibold" aria-label="Vessel home">
+          <Link href="/" className="inline-flex items-center gap-2 text-lg font-semibold" aria-label="null home">
             <span className="grid size-9 place-items-center rounded-[10px] bg-brand-400 text-[#04231b]">
               <svg viewBox="0 0 24 24" className="size-5" fill="none" aria-hidden suppressHydrationWarning>
                 <path d="M4 15.5c2.2 2.6 5.1 3.9 8 3.9s5.8-1.3 8-3.9" stroke="currentColor" strokeWidth="2" strokeLinecap="round" suppressHydrationWarning />
@@ -24,7 +24,7 @@ export default function AuthLayout({ children }: { children: React.ReactNode }) 
                 <path d="M8.6 8.2 12 4.6l3.4 3.6" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" suppressHydrationWarning />
               </svg>
             </span>
-            Vessel
+            null
           </Link>
         </div>
 

@@ -95,9 +95,8 @@ export const RESERVED_USERNAMES = new Set<string>([
   "webmaster",
   "noreply",
   "no-reply",
-  "vessel",
-  "guns",
   "null",
+  "guns",
   "everyone",
   "anonymous",
   "guest",
@@ -110,7 +109,7 @@ export const RESERVED_USERNAMES = new Set<string>([
 ]);
 
 /** Names that read as impersonation of the platform itself. */
-const IMPERSONATION_PATTERNS = [/^(vessel|admin)[-_]?/i, /[-_]?(official|support|staff|team)$/i];
+const IMPERSONATION_PATTERNS = [/^(null|admin)[-_]?/i, /[-_]?(official|support|staff|team)$/i];
 
 export type UsernameCheck =
   | { ok: true; username: string; display: string }

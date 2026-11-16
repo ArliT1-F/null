@@ -115,6 +115,7 @@ export default async function ProfilePage({ params }: PageProps) {
     showLocation: profile.config.layout.showLocation,
     showStatus: profile.config.layout.showStatus,
     showAvatar: profile.config.layout.showAvatar,
+    blocks: profile.config.blocks,
     entrance: profile.config.theme.effects.entrance,
     appName: env.APP_NAME,
   };
@@ -136,7 +137,7 @@ export default async function ProfilePage({ params }: PageProps) {
 
   return (
     <>
-      {/* The generated stylesheet is scoped to .vessel-profile and built only
+      {/* The generated stylesheet is scoped to .null-profile and built only
           from validated tokens; see src/lib/profile-css.ts. */}
       <style dangerouslySetInnerHTML={{ __html: css }} />
       <style

@@ -6,7 +6,7 @@
  * usernames are unique case-insensitively.
  *
  * Run with a disposable database:
- *   TEST_DATABASE_URL=postgresql://postgres@127.0.0.1:5432/vessel_test npm test
+ *   TEST_DATABASE_URL=postgresql://postgres@127.0.0.1:5432/null_test npm test
  * Without TEST_DATABASE_URL the suite is skipped rather than failed.
  */
 

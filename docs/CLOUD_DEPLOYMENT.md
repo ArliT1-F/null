@@ -13,7 +13,7 @@ Internet ──▶ Cloudflare (DNS, CDN, WAF)
           Load balancer / reverse proxy  (TLS)
                   │
                   ▼
-        Vessel container(s)  ────▶ Managed PostgreSQL
+        null container(s)  ────▶ Managed PostgreSQL
                   │
                   └────────────▶ Cloudflare R2 (media, via S3 API)
 ```
@@ -75,9 +75,9 @@ same environment variables, and set the health check path to `/api/health`.
 ## 5. Verify
 
 ```bash
-curl -fsS https://vessel.example.com/api/health | jq
-curl -fsSI https://vessel.example.com/ | head -5
-curl -fsS https://vessel.example.com/<a-published-username> | grep -o '<title>[^<]*'
+curl -fsS https://null.example.com/api/health | jq
+curl -fsSI https://null.example.com/ | head -5
+curl -fsS https://null.example.com/<a-published-username> | grep -o '<title>[^<]*'
 ```
 
 Then, in the browser:

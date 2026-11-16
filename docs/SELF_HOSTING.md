@@ -37,7 +37,7 @@ sudo systemctl restart docker
 ## Deploy
 
 ```bash
-git clone <repo> /srv/vessel && cd /srv/vessel
+git clone <repo> /srv/null && cd /srv/null
 cp .env.selfhosted.example .env.selfhosted
 ```
 
@@ -86,7 +86,7 @@ curl -fsSI https://your-domain.example | head -1
 ## Cloudflare Tunnel
 
 1. In Cloudflare Zero Trust → **Networks → Tunnels → Create a tunnel**, choose
-   *Cloudflared*, name it `vessel`.
+   *Cloudflared*, name it `null`.
 2. Copy the tunnel token into `CLOUDFLARE_TUNNEL_TOKEN`.
 3. Add a **Public Hostname**: `your-domain.example` → `http://web:3000`.
    The service name `web` is the compose service; the tunnel container shares the
@@ -108,11 +108,11 @@ it to `/_next/static/*` and `/api/media/*` only.
 ## Restart and update procedure
 
 ```bash
-cd /srv/vessel
+cd /srv/null
 
 # 1. Back up first — always
-BACKUP_MEDIA_DIR=/var/lib/docker/volumes/vessel_media_data/_data \
-RCLONE_REMOTE=remote:vessel-backups \
+BACKUP_MEDIA_DIR=/var/lib/docker/volumes/null_media_data/_data \
+RCLONE_REMOTE=remote:null-backups \
 ./scripts/backup.sh
 
 # 2. Pull and rebuild
@@ -141,7 +141,7 @@ or a crash on its own. Enable Docker at boot (`systemctl enable docker`).
 - **Logs**: `docker compose logs -f web`. Rotation is configured at 10 MB × 3
   files per service.
 - **Disk**: the database grows slowly, but media does not — watch
-  `du -sh /var/lib/docker/volumes/vessel_*`.
+  `du -sh /var/lib/docker/volumes/null_*`.
 - **Memory**: `docker stats` should show the app well under its 768 MB cap.
 
 ## Scheduled jobs
@@ -150,10 +150,10 @@ Add to `crontab -e` on the host:
 
 ```cron
 # Nightly backup at 03:15, keep 14 days locally and copy off-site
-15 3 * * * cd /srv/vessel && BACKUP_MEDIA_DIR=/var/lib/docker/volumes/vessel_media_data/_data RCLONE_REMOTE=remote:vessel-backups ./scripts/backup.sh >> /var/log/vessel-backup.log 2>&1
+15 3 * * * cd /srv/null && BACKUP_MEDIA_DIR=/var/lib/docker/volumes/null_media_data/_data RCLONE_REMOTE=remote:null-backups ./scripts/backup.sh >> /var/log/null-backup.log 2>&1
 
 # Monthly restore rehearsal into a scratch database
-0 4 1 * * cd /srv/vessel && ./scripts/restore.sh "$(ls -t backups/db-*.sql.gz | head -1)" >> /var/log/vessel-restore-check.log 2>&1
+0 4 1 * * cd /srv/null && ./scripts/restore.sh "$(ls -t backups/db-*.sql.gz | head -1)" >> /var/log/null-restore-check.log 2>&1
 ```
 
 See [BACKUP_AND_RESTORE.md](BACKUP_AND_RESTORE.md) for the full policy.

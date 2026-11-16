@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # ---------------------------------------------------------------------------
-# Vessel — backup script
+# null — backup script
 #
 # Backs up PostgreSQL and (optionally) the media directory, verifies the dump,
 # rotates old archives, and can push a copy off-site.
@@ -23,8 +23,8 @@ set -Eeuo pipefail
 BACKUP_DIR="${BACKUP_DIR:-./backups}"
 BACKUP_RETAIN_DAYS="${BACKUP_RETAIN_DAYS:-14}"
 COMPOSE_FILE="${COMPOSE_FILE:-docker-compose.yml}"
-POSTGRES_USER="${POSTGRES_USER:-vessel}"
-POSTGRES_DB="${POSTGRES_DB:-vessel}"
+POSTGRES_USER="${POSTGRES_USER:-null}"
+POSTGRES_DB="${POSTGRES_DB:-null}"
 RCLONE_REMOTE="${RCLONE_REMOTE:-}"
 
 STAMP="$(date -u +%Y%m%dT%H%M%SZ)"

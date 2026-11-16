@@ -19,7 +19,7 @@ export const pool =
     max: env.isProduction ? 10 : 5,
     idleTimeoutMillis: 30_000,
     connectionTimeoutMillis: 10_000,
-    application_name: "vessel-web",
+    application_name: "null-web",
   });
 
 if (!globalForDb.pool) {

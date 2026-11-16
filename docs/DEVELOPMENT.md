@@ -11,7 +11,7 @@ Nothing else. There is no Redis, no message broker, no object storage emulator.
 ## First run
 
 ```bash
-git clone <repo> vessel && cd vessel
+git clone <repo> null && cd null
 cp .env.example .env
 ```
 
@@ -35,7 +35,7 @@ Open <http://localhost:3000>. The seed creates twelve themes and (outside
 production) an admin account:
 
 ```
-admin@localhost / vessel-admin-2026
+admin@localhost / null-admin-2026
 ```
 
 Override with `SEED_ADMIN_EMAIL`, `SEED_ADMIN_PASSWORD`,
@@ -89,8 +89,8 @@ The suite is `tests/`:
 `publishing.test.ts` needs a real database and is skipped without one:
 
 ```bash
-createdb vessel_test
-TEST_DATABASE_URL=postgresql://localhost/vessel_test npm test
+createdb null_test
+TEST_DATABASE_URL=postgresql://localhost/null_test npm test
 ```
 
 It applies the real migrations to that database, so it also validates migrations.
@@ -121,7 +121,7 @@ Refuses to run unless the database name ends in `_dev`, `_test` or `_local`.
 
 ```bash
 TOKEN=$(NODE_OPTIONS=--conditions=react-server npx tsx --env-file=.env scripts/dev/dev-session.ts arlit1)
-curl -H "Cookie: vessel_session=$TOKEN" http://localhost:3000/dashboard
+curl -H "Cookie: null_session=$TOKEN" http://localhost:3000/dashboard
 ```
 
 `NODE_OPTIONS=--conditions=react-server` is required because those scripts import

@@ -33,9 +33,9 @@ export class LocalStorageProvider implements StorageProvider {
   * Turns a filesystem failure into something an operator can act on.
   * 
   * The raw error surfaces deep inside an upload as `EACCES: mkdir
-  * '/srv/vessel'`, which says nothing about which knob to turn. The usual
+  * '/srv/null'`, which says nothing about which knob to turn. The usual
   * cause is a `MEDIA_ROOT` copied from the Docker template (aboslute
-  * /srv/vessel/media) on a machine where that path is not writable.
+  * /srv/null/media) on a machine where that path is not writable.
   */
 
   private unusable(cause: unknown, full: string): Error {
@@ -44,7 +44,7 @@ export class LocalStorageProvider implements StorageProvider {
       `MEDIA_ROOT is not writable: ${code} while writing "${full} (root: ${this.root}). ` +
       "Create that directory and make it writable by the app user, or point MEDIA_ROOT at a " +
       "writable path. Relative paths resolve from the working directory, so `MEDIA_ROOT=./media` " +
-      "is the usual development setting; Docker sets /srv/vessel/media for you.",
+      "is the usual development setting; Docker sets /srv/null/media for you.",
       { cause },
     );
   }

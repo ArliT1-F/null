@@ -10,7 +10,7 @@ import { env } from "@/lib/env";
  * - `hashIp` keeps analytics/audit data useful without storing raw addresses.
  */
 
-const SALT = "vessel.v1";
+const SALT = "null.v1";
 
 export function randomToken(bytes = 32): string {
   return randomBytes(bytes).toString("base64url");

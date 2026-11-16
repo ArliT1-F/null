@@ -1,8 +1,8 @@
 {
-  "name": "vessel",
+  "name": "null",
   "version": "1.0.0",
   "private": true,
-  "description": "Vessel \u2014 a customizable personal identity and profile platform.",
+  "description": "null \u2014 a customizable personal identity and profile platform.",
   "engines": {
     "node": ">=20.11"
   },
