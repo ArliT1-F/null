@@ -5,8 +5,8 @@ import { getCurrentUser } from "@/lib/auth/session";
 /**
  * Authenticated shell.
  *
- * Middleware already redirects cookie-less visitors, but the authoritative check
- * happens here against the database — a stale or forged cookie must not pass.
+ * Authentication is checked here against the database, never inferred from
+ * cookie presence in middleware — a stale or forged cookie must not pass.
  */
 export default async function DashboardLayout({ children }: { children: React.ReactNode }) {
   const user = await getCurrentUser();

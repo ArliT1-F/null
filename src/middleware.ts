@@ -4,40 +4,19 @@ import { NextResponse, type NextRequest } from "next/server";
  * Edge middleware.
  *
  * Responsibilities are intentionally narrow:
- *  1. Send signed-out visitors away from authenticated routes.
- *  2. Add a strict baseline of security headers.
- *  3. Mark private areas as non-cacheable.
+ * Add security headers and mark private areas as non-cacheable.
  *
- * Authorisation itself is *always* re-checked in the server component or route
- * handler; middleware is a fast redirect, not the security boundary.
+ * Authentication redirects belong to server layouts/pages, which validate the
+ * session against the database. Cookie presence alone is not authentication:
+ * expired, revoked or pre-migration cookies would otherwise cause redirect loops.
  */
 
 const PROTECTED_PREFIXES = ["/dashboard"];
-const AUTH_PAGES = ["/login", "/register"];
-
-const SESSION_COOKIE = process.env.SESSION_COOKIE_NAME ?? "null_session";
-
 export function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl;
-  const hasSession = Boolean(request.cookies.get(SESSION_COOKIE)?.value);
-
-  if (!hasSession && PROTECTED_PREFIXES.some((prefix) => pathname.startsWith(prefix))) {
-    const url = request.nextUrl.clone();
-    url.pathname = "/login";
-    url.search = `?redirectTo=${encodeURIComponent(pathname + request.nextUrl.search)}`;
-    return NextResponse.redirect(url);
-  }
-
-  if (hasSession && AUTH_PAGES.includes(pathname)) {
-    const url = request.nextUrl.clone();
-    url.pathname = "/dashboard";
-    url.search = "";
-    return NextResponse.redirect(url);
-  }
-
   const response = NextResponse.next();
 
-  if (PROTECTED_PREFIXES.some((prefix) => pathname.startsWith(prefix))) {
+  if (PROTECTED_PREFIXES.some((prefix) => (pathname === prefix || pathname.startsWith(`${prefix}/`)))) {
     response.headers.set("Cache-Control", "no-store, must-revalidate");
     response.headers.set("X-Robots-Tag", "noindex, nofollow");
   }
