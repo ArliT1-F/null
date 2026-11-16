@@ -1,35 +1,48 @@
+import { env } from "@/lib/env";
+import { parseByteRangeHeader } from "@/lib/media-verify";
 import { StorageNotFoundError, assertSafeKey, getStorage } from "@/lib/storage";
 
 /**
- * GET /api/media/[...key] — serves a stored object. See docs/API.md.
+ * GET /api/media/[...key] — serves stored media objects (images, fonts, videos).
  *
- * Keys are generated server-side (`avatars/<userId>/<year>/<asset>@256.webp`),
- * so this route only has to refuse anything that is not a plain path: no
- * traversal, no backslashes, no unexpected characters (`assertSafeKey`), and
- * only inside the folders the pipeline writes to.
- *
- * The object bytes are user-supplied images, so the response is deliberately
- * inert: `nosniff`, immutable caching, and the sandboxing CSP that
- * next.config.ts also applies to this path.
+ * Keys are generated server-side, restricted to pipeline roots, checked with
+ * `assertSafeKey`, and returned strictly as inert data (`nosniff`, immutable
+ * caching, and `Content-Security-Policy: default-src 'none'; sandbox`).
+ * Supports HTTP `Range` (`206 Partial Content`) so video backgrounds stream
+ * efficiently without downloading the full asset up front.
  */
 
 export const runtime = "nodejs";
 
-/** Only these top-level folders are produced by the media pipeline. */
-const ALLOWED_ROOTS = new Set(["avatars", "backgrounds", "galleries", "audio", "uploads"]);
+const ALLOWED_ROOTS = new Set([
+  "avatars",
+  "backgrounds",
+  "galleries",
+  "fonts",
+  "videos",
+  "audio",
+  "uploads",
+]);
 
 function notFound() {
   return new Response("Not found", { status: 404, headers: { "Cache-Control": "no-store" } });
 }
 
-export async function GET(_request: Request, { params }: { params: Promise<{ key: string[] }> }) {
+function sandboxCorsHeaders(request: Request): Record<string, string> {
+  const origin = request.headers.get("origin");
+  if (!origin) return {};
+  if (origin === "null" || (env.proCssSandboxOrigin && origin === env.proCssSandboxOrigin)) {
+    return { "Access-Control-Allow-Origin": origin, Vary: "Origin" };
+  }
+  return {};
+}
+
+export async function GET(request: Request, { params }: { params: Promise<{ key: string[] }> }) {
   const { key } = await params;
   const segments = Array.isArray(key) ? key : [];
 
   let storageKey: string;
   try {
-    // A real key always names a folder *and* a file (`avatars/<user>/…/x.webp`);
-    // a bare folder name is never an object.
     if (segments.length < 2) return notFound();
     if (!ALLOWED_ROOTS.has(segments[0] ?? "")) return notFound();
     storageKey = segments.join("/");
@@ -39,7 +52,46 @@ export async function GET(_request: Request, { params }: { params: Promise<{ key
   }
 
   try {
-    const object = await getStorage().get(storageKey);
+    const storage = getStorage();
+    const range = parseByteRangeHeader(request.headers.get("range"));
+    if (range === "invalid") {
+      return new Response("Range not satisfiable", {
+        status: 416,
+        headers: { "Cache-Control": "no-store" },
+      });
+    }
+
+    if (range && storage.getRange) {
+      const slice = await storage.getRange(storageKey, range.start, range.end);
+      if (!slice) return notFound();
+      if (slice === "unsatisfiable") {
+        const whole = await storage.get(storageKey);
+        await whole?.body.cancel().catch(() => {});
+        return new Response("Range not satisfiable", {
+          status: 416,
+          headers: {
+            "Cache-Control": "no-store",
+            ...(whole ? { "Content-Range": `bytes */${whole.size}` } : {}),
+          },
+        });
+      }
+      return new Response(slice.body, {
+        status: 206,
+        headers: {
+          "Content-Type": slice.contentType,
+          "Content-Range": `bytes ${slice.start}-${slice.end}/${slice.totalSize}`,
+          "Content-Length": String(slice.size),
+          "Accept-Ranges": "bytes",
+          "Cache-Control": "public, max-age=31536000, immutable",
+          "X-Content-Type-Options": "nosniff",
+          "Cross-Origin-Resource-Policy": "cross-origin",
+          "Content-Security-Policy": "default-src 'none'; sandbox",
+          ...sandboxCorsHeaders(request),
+        },
+      });
+    }
+
+    const object = await storage.get(storageKey);
     if (!object) return notFound();
 
     return new Response(object.body, {
@@ -47,9 +99,12 @@ export async function GET(_request: Request, { params }: { params: Promise<{ key
       headers: {
         "Content-Type": object.contentType,
         "Content-Length": String(object.size),
+        "Accept-Ranges": "bytes",
         "Cache-Control": "public, max-age=31536000, immutable",
         "X-Content-Type-Options": "nosniff",
+        "Cross-Origin-Resource-Policy": "cross-origin",
         "Content-Security-Policy": "default-src 'none'; sandbox",
+        ...sandboxCorsHeaders(request),
       },
     });
   } catch (error) {

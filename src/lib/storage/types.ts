@@ -12,6 +12,15 @@ export type StoredObject = {
   contentType: string;
 };
 
+export type StoredRangeObject = {
+  body: ReadableStream<Uint8Array>;
+  contentType: string;
+  size: number;
+  start: number;
+  end: number;
+  totalSize: number;
+};
+
 export interface StorageProvider {
   readonly name: "local" | "s3";
 
@@ -20,6 +29,9 @@ export interface StorageProvider {
 
   /** Returns the object stream, or null when the key does not exist. */
   get(key: string): Promise<{ body: ReadableStream<Uint8Array>; contentType: string; size: number } | null>;
+
+  /** Returns an inclusive byte range (`[start, end]`) for HTTP 206 streaming (videos). */
+  getRange?(key: string, start: number, end?: number): Promise<StoredRangeObject | "unsatisfiable" | null>;
 
   /** Raw bytes — used by the image pipeline to generate variants. */
   getBuffer(key: string): Promise<Buffer | null>;
@@ -49,7 +61,9 @@ export class StorageNotFoundError extends Error {
  */
 export function assertSafeKey(key: string): void {
   if (!key || key.length > 512) throw new Error("Invalid storage key");
-  if (key.startsWith("/") || key.includes("\\")) throw new Error("Invalid storage key");
+  if (key.startsWith("/") || key.includes("\\") || key.includes("\0")) {
+    throw new Error("Invalid storage key");
+  }
   const segments = key.split("/");
   for (const segment of segments) {
     if (segment === "" || segment === "." || segment === "..") throw new Error("Invalid storage key");

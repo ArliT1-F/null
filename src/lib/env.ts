@@ -25,6 +25,52 @@ const int = (fallback: number, min: number, max: number) =>
     })
     .pipe(z.number().int().min(min).max(max));
 
+/**
+ * Normalises and verifies the isolated Pro CSS sandbox origin (guardrail #4).
+ *
+ * Custom user CSS must NEVER execute on the primary application origin. A
+ * configured sandbox origin that shares scheme+host+port with `APP_URL`, uses a
+ * non-http(s) scheme, embeds credentials, or uses plain http in production is
+ * rejected outright at startup.
+ */
+export function resolveSandboxOrigin(
+  rawSandbox: string | undefined,
+  appUrl: string,
+  isProduction: boolean,
+): string | null {
+  const trimmed = rawSandbox?.trim() ?? "";
+  if (!trimmed) return null;
+
+  let sandbox: URL;
+  try {
+    sandbox = new URL(trimmed);
+  } catch {
+    throw new Error("PRO_CSS_SANDBOX_ORIGIN must be a valid http(s) origin URL");
+  }
+
+  if (sandbox.protocol !== "https:" && sandbox.protocol !== "http:") {
+    throw new Error("PRO_CSS_SANDBOX_ORIGIN must use https:// (or http:// in local development)");
+  }
+  if (isProduction && sandbox.protocol !== "https:") {
+    throw new Error("PRO_CSS_SANDBOX_ORIGIN must use https:// in production");
+  }
+  if (sandbox.username || sandbox.password) {
+    throw new Error("PRO_CSS_SANDBOX_ORIGIN must not contain credentials");
+  }
+  if ((sandbox.pathname && sandbox.pathname !== "/") || sandbox.search || sandbox.hash) {
+    throw new Error("PRO_CSS_SANDBOX_ORIGIN must be a bare origin with no path, query, or hash");
+  }
+
+  const app = new URL(appUrl);
+  if (sandbox.origin.toLowerCase() === app.origin.toLowerCase()) {
+    throw new Error(
+      "PRO_CSS_SANDBOX_ORIGIN must be a separate origin from APP_URL — user CSS is never served on the application origin",
+    );
+  }
+
+  return sandbox.origin;
+}
+
 const schema = z.object({
   NODE_ENV: z.enum(["development", "test", "production"]).default("development"),
   APP_URL: z.string().url().default("http://localhost:3000"),
@@ -45,13 +91,13 @@ const schema = z.object({
    * directory (gitignored), so `npm run dev` works without configuring
    * anything. A blank value is treated as unset — an empty line in a .env file
    * must not become a path.
-  */
+   */
   MEDIA_ROOT: z.preprocess(
     (value) => (typeof value === "string" && value.trim() === "" ? undefined : value),
     z.string().min(1).optional(),
   ),
   MEDIA_PUBLIC_PREFIX: z.string().startsWith("/").default("/api/media"),
-  MAX_UPLOAD_MB: int(12, 1, 256),
+  MAX_UPLOAD_MB: int(16, 1, 256),
 
   S3_ENDPOINT: z.string().optional(),
   S3_REGION: z.string().default("auto"),
@@ -73,6 +119,12 @@ const schema = z.object({
 
   FEATURE_BILLING: bool(false),
   FEATURE_INTEGRATIONS: bool(false),
+  /** Enables the Pro Monaco CSS editor. Public rendering also requires PRO_CSS_SANDBOX_ORIGIN. */
+  FEATURE_PRO_CSS: bool(false),
+  /** Grants Pro entitlements to all signed-in accounts in non-production environments only. */
+  FEATURE_PRO_CSS_DEV_ALL: bool(false),
+  /** Distinct origin (e.g. https://sandbox.example.com) that serves isolated custom-CSS frames. */
+  PRO_CSS_SANDBOX_ORIGIN: z.string().optional(),
 });
 
 function load() {
@@ -87,36 +139,44 @@ function load() {
     );
   }
 
-  const env = parsed.data;
+  const raw = parsed.data;
 
-  if (env.STORAGE_DRIVER === "s3") {
+  if (raw.STORAGE_DRIVER === "s3") {
     const missing = (["S3_BUCKET", "S3_ENDPOINT", "S3_ACCESS_KEY_ID", "S3_SECRET_ACCESS_KEY"] as const)
-      .filter((k) => !env[k]);
+      .filter((k) => !raw[k]);
     if (missing.length) {
       throw new Error(`STORAGE_DRIVER=s3 requires: ${missing.join(", ")}`);
     }
   }
 
-  if (env.MAIL_DRIVER === "smtp" && !env.SMTP_HOST) {
+  if (raw.MAIL_DRIVER === "smtp" && !raw.SMTP_HOST) {
     throw new Error("MAIL_DRIVER=smtp requires SMTP_HOST");
   }
 
-  const isProd = env.NODE_ENV === "production";
-  if (isProd && env.AUTH_SECRET.includes("replace-me")) {
+  const isProd = raw.NODE_ENV === "production";
+  if (isProd && raw.AUTH_SECRET.includes("replace-me")) {
     throw new Error("Refusing to start in production with a placeholder AUTH_SECRET");
   }
 
+  const proCssSandboxOrigin = resolveSandboxOrigin(raw.PRO_CSS_SANDBOX_ORIGIN, raw.APP_URL, isProd);
+
   return {
-    ...env,
-    MEDIA_ROOT: env.MEDIA_ROOT ?? (isProd ? "/srv/null/media" : "media"),
+    ...raw,
+    MEDIA_ROOT: raw.MEDIA_ROOT ?? (isProd ? "/srv/null/media" : "media"),
     isProduction: isProd,
-    isDevelopment: env.NODE_ENV === "development",
-    isTest: env.NODE_ENV === "test",
-    maxUploadBytes: env.MAX_UPLOAD_MB * 1024 * 1024,
-    allowedOrigins: (env.ALLOWED_ORIGINS ?? "")
+    isDevelopment: raw.NODE_ENV === "development",
+    isTest: raw.NODE_ENV === "test",
+    maxUploadBytes: raw.MAX_UPLOAD_MB * 1024 * 1024,
+    allowedOrigins: (raw.ALLOWED_ORIGINS ?? "")
       .split(",")
       .map((s) => s.trim())
       .filter(Boolean),
+    appOrigin: new URL(raw.APP_URL).origin,
+    proCssSandboxOrigin,
+    /** Public custom-CSS rendering requires both the feature flag and a verified separate origin. */
+    proCssPublicEnabled: raw.FEATURE_PRO_CSS && proCssSandboxOrigin !== null,
+    /** Dev override never activates in production, even if accidentally set. */
+    proCssDevAll: !isProd && raw.FEATURE_PRO_CSS_DEV_ALL,
   };
 }
 

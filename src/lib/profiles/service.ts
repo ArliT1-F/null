@@ -1,32 +1,64 @@
 import "server-only";
-import { diffSnapshots } from "@/lib/profile-diff";
 
 import { and, asc, desc, eq, sql } from "drizzle-orm";
 import { db } from "@/db/client";
 import {
+  profileCustomCss,
   profileLinks,
   profileVersions,
   profiles,
+  savedThemes,
   users,
   type Profile,
   type ProfileLink,
+  type SavedTheme,
 } from "@/db/schema";
-import { normalizeProfileConfig, type ProfileConfig } from "@/lib/profile-config";
+import { compileCustomCss, MAX_CUSTOM_CSS_LENGTH } from "@/lib/custom-css";
+import { getEntitlements } from "@/lib/entitlements";
+import {
+  applyThemeToConfig,
+  filterVisibleBlocks,
+  normalizeProfileConfig,
+  themeSchema,
+  type ProfileConfig,
+  type ThemeTokens,
+} from "@/lib/profile-config";
+import { diffSnapshots, type RevisionChange } from "@/lib/profile-diff";
 import { validateUsername } from "@/lib/username";
 
 /**
  * Profile domain service.
  *
  * The invariant this module protects: **editing never changes what visitors
- * see.** All edits touch `profiles.draftConfig`; `publishProfile()` copies the
- * draft into `profiles.publishedSnapshot` inside a transaction. That single rule
- * makes drafts, previews, revision history and rollback all fall out naturally.
+ * see.** All edits touch `profiles.draftConfig` (and, when entitled, the
+ * separate `profile_custom_css.draft_css`); `publishProfile()` snapshots the
+ * validated state into `profiles.publishedSnapshot` + `profile_versions` inside
+ * a single transaction.
+ *
+ * Raw user CSS NEVER enters `draftConfig` or `publishedSnapshot.config`
+ * (guardrail #3), and is rendered solely via `PRO_CSS_SANDBOX_ORIGIN`
+ * (guardrail #4).
  */
 
 export type ProfileWithUser = {
   profile: Profile;
-  user: { id: string; username: string; usernameDisplay: string; displayName: string | null; avatarUrl: string | null; status: string };
+  user: {
+    id: string;
+    username: string;
+    usernameDisplay: string;
+    displayName: string | null;
+    avatarUrl: string | null;
+    status: string;
+  };
   links: ProfileLink[];
+};
+
+export type PublicLink = {
+  id: string;
+  label: string;
+  url: string;
+  icon: string;
+  highlight: boolean;
 };
 
 export type PublishedProfile = {
@@ -40,18 +72,31 @@ export type PublishedProfile = {
   statusText: string | null;
   config: ProfileConfig;
   links: PublicLink[];
-  /** Visible blocks in render order; full config retains hidden blocks for editing. */
+  /** Visible blocks in render order (respecting group visibility); full config retains hidden blocks. */
   blocks: ProfileConfig["blocks"];
+  /** Compiled, scoped custom CSS — NEVER rendered on APP_URL; sandbox-origin only. */
+  publishedCustomCss: string | null;
   revision: number;
   publishedAt: Date;
 };
 
-export type PublicLink = {
-  id: string;
-  label: string;
-  url: string;
-  icon: string;
-  highlight: boolean;
+type StoredSnapshot = {
+  config: unknown;
+  links: PublicLink[];
+  identity: {
+    displayName: string | null;
+    bio: string | null;
+    avatarUrl: string | null;
+    headline: string | null;
+    location: string | null;
+    statusText: string | null;
+    usernameDisplay: string;
+  };
+  /** Optional revision label entered at publish time. */
+  label?: string | null;
+  /** Validated custom CSS captured at publish time (kept outside `config`). */
+  customCss?: string | null;
+  publishedAt?: string;
 };
 
 // ---------------------------------------------------------------------------
@@ -67,19 +112,36 @@ export async function getEditorData(userId: string) {
   const profile = await getProfileForUser(userId);
   if (!profile) return null;
 
-  const links = await db
-    .select()
-    .from(profileLinks)
-    .where(eq(profileLinks.profileId, profile.id))
-    .orderBy(asc(profileLinks.position), asc(profileLinks.createdAt));
+  const [links, userRows, cssRows, userSavedThemes] = await Promise.all([
+    db
+      .select()
+      .from(profileLinks)
+      .where(eq(profileLinks.profileId, profile.id))
+      .orderBy(asc(profileLinks.position), asc(profileLinks.createdAt)),
+    db.select().from(users).where(eq(users.id, userId)).limit(1),
+    db.select().from(profileCustomCss).where(eq(profileCustomCss.profileId, profile.id)).limit(1),
+    db
+      .select()
+      .from(savedThemes)
+      .where(eq(savedThemes.userId, userId))
+      .orderBy(desc(savedThemes.createdAt))
+      .limit(40),
+  ]);
 
-  const userRows = await db.select().from(users).where(eq(users.id, userId)).limit(1);
+  const user = userRows[0];
+  if (!user) return null;
 
   return {
     profile,
     links,
-    user: userRows[0],
+    user,
     config: normalizeProfileConfig(profile.draftConfig),
+    customCss: {
+      draft: cssRows[0]?.draftCss ?? "",
+      published: cssRows[0]?.publishedCss ?? null,
+    },
+    savedThemes: userSavedThemes,
+    entitlements: getEntitlements({ id: user.id, role: user.role }),
   };
 }
 
@@ -92,9 +154,14 @@ export async function getPublishedProfile(username: string): Promise<PublishedPr
   const canonical = username.toLowerCase();
 
   const rows = await db
-    .select({ profile: profiles, user: users })
+    .select({
+      profile: profiles,
+      user: users,
+      publishedCss: profileCustomCss.publishedCss,
+    })
     .from(profiles)
     .innerJoin(users, eq(users.id, profiles.userId))
+    .leftJoin(profileCustomCss, eq(profileCustomCss.profileId, profiles.id))
     .where(and(eq(users.username, canonical), eq(users.status, "ACTIVE")))
     .limit(1);
 
@@ -103,21 +170,20 @@ export async function getPublishedProfile(username: string): Promise<PublishedPr
   if (row.profile.visibility === "PRIVATE") return null;
   if (!row.profile.publishedSnapshot) return null;
 
-  const snapshot = row.profile.publishedSnapshot as {
-    config: unknown;
-    links: PublicLink[];
-    identity: {
-      displayName: string | null;
-      bio: string | null;
-      avatarUrl: string | null;
-      headline: string | null;
-      location: string | null;
-      statusText: string | null;
-      usernameDisplay: string;
-    };
-  };
-
+  const snapshot = row.profile.publishedSnapshot as StoredSnapshot;
   const config = normalizeProfileConfig(snapshot.config);
+
+  // Re-check entitlement and re-compile stored CSS at read time (defence in depth).
+  let publishedCustomCss: string | null = null;
+  const entitlements = getEntitlements({ id: row.user.id, role: row.user.role });
+  const rawCss = row.publishedCss ?? snapshot.customCss ?? null;
+  if (entitlements.canPublishCustomCss && rawCss && rawCss.trim()) {
+    const compiled = compileCustomCss(rawCss);
+    if (compiled.ok && compiled.css) {
+      publishedCustomCss = compiled.css;
+    }
+  }
+
   return {
     username: row.user.username,
     usernameDisplay: snapshot.identity?.usernameDisplay ?? row.user.usernameDisplay,
@@ -129,7 +195,8 @@ export async function getPublishedProfile(username: string): Promise<PublishedPr
     statusText: snapshot.identity?.statusText ?? null,
     config,
     links: (snapshot.links ?? []).filter((l) => l && l.url && l.label),
-    blocks: config.blocks.filter((b) => b.visible),
+    blocks: filterVisibleBlocks(config.blocks, config.groups),
+    publishedCustomCss,
     revision: row.profile.revision,
     publishedAt: row.profile.publishedAt ?? row.profile.updatedAt,
   };
@@ -146,7 +213,7 @@ export async function usernameTaken(username: string): Promise<boolean> {
 }
 
 // ---------------------------------------------------------------------------
-// Draft edits
+// Draft edits (config, theme presets, saved themes, custom CSS, identity)
 // ---------------------------------------------------------------------------
 
 export async function updateDraftConfig(userId: string, config: unknown): Promise<Profile> {
@@ -158,6 +225,154 @@ export async function updateDraftConfig(userId: string, config: unknown): Promis
     .returning();
   if (!updated) throw new Error("Profile not found");
   return updated;
+}
+
+/**
+ * Applies a theme's token preset to a user's draft while preserving their
+ * authored blocks, layer groups, responsive breakpoint overrides, layout mode,
+ * canvas positions, and uploaded font reference.
+ */
+export async function applyThemeForUser(
+  userId: string,
+  themeSlug: string,
+  tokens: unknown,
+): Promise<ProfileConfig> {
+  const profile = await getProfileForUser(userId);
+  if (!profile) throw new Error("Profile not found");
+
+  const merged = applyThemeToConfig(profile.draftConfig, tokens);
+  await db
+    .update(profiles)
+    .set({ draftConfig: merged, themeSlug, draftUpdatedAt: new Date() })
+    .where(eq(profiles.id, profile.id));
+  return merged;
+}
+
+export async function listSavedThemes(userId: string): Promise<SavedTheme[]> {
+  return db
+    .select()
+    .from(savedThemes)
+    .where(eq(savedThemes.userId, userId))
+    .orderBy(desc(savedThemes.createdAt))
+    .limit(40);
+}
+
+export async function createSavedTheme(
+  userId: string,
+  name: string,
+  tokens: unknown,
+): Promise<SavedTheme> {
+  const cleanName = name.trim().slice(0, 60);
+  if (!cleanName) throw new Error("Give your theme a name.");
+
+  const [user] = await db.select().from(users).where(eq(users.id, userId)).limit(1);
+  if (!user) throw new Error("Account not found.");
+
+  const entitlements = getEntitlements({ id: user.id, role: user.role });
+  const existing = await db
+    .select({ id: savedThemes.id })
+    .from(savedThemes)
+    .where(eq(savedThemes.userId, userId));
+  if (existing.length >= entitlements.maxSavedThemes) {
+    throw new Error(
+      `You can save up to ${entitlements.maxSavedThemes} personal themes. Remove one to save another.`,
+    );
+  }
+
+  const validTokens: ThemeTokens = themeSchema.parse(tokens);
+  const [created] = await db
+    .insert(savedThemes)
+    .values({ userId, name: cleanName, tokens: validTokens })
+    .returning();
+  return created;
+}
+
+export async function applySavedTheme(userId: string, savedThemeId: string): Promise<ProfileConfig> {
+  const [saved] = await db
+    .select()
+    .from(savedThemes)
+    .where(and(eq(savedThemes.id, savedThemeId), eq(savedThemes.userId, userId)))
+    .limit(1);
+  if (!saved) throw new Error("Saved theme not found.");
+
+  return applyThemeForUser(userId, "custom", saved.tokens);
+}
+
+export async function deleteSavedTheme(userId: string, savedThemeId: string): Promise<boolean> {
+  const deleted = await db
+    .delete(savedThemes)
+    .where(and(eq(savedThemes.id, savedThemeId), eq(savedThemes.userId, userId)))
+    .returning({ id: savedThemes.id });
+  return deleted.length > 0;
+}
+
+export class CustomCssError extends Error {
+  constructor(
+    message: string,
+    readonly code: "NOT_ENTITLED" | "INVALID_CSS" | "NOT_FOUND" = "INVALID_CSS",
+  ) {
+    super(message);
+    this.name = "CustomCssError";
+  }
+}
+
+/**
+ * Validates, scopes, and saves draft custom CSS in `profile_custom_css`.
+ * Never touches `draftConfig`. Enforces entitlements at write time.
+ */
+export async function saveDraftCustomCss(
+  userId: string,
+  rawCss: string,
+): Promise<{ draftCss: string; compiledCss: string }> {
+  const rows = await db
+    .select({ userId: users.id, role: users.role, profileId: profiles.id })
+    .from(users)
+    .innerJoin(profiles, eq(profiles.userId, users.id))
+    .where(eq(users.id, userId))
+    .limit(1);
+  const row = rows[0];
+  if (!row) throw new CustomCssError("Profile not found.", "NOT_FOUND");
+
+  const entitlements = getEntitlements({ id: row.userId, role: row.role });
+  if (!entitlements.canEditCustomCss) {
+    throw new CustomCssError(
+      entitlements.customCssDisabledReason ?? "Custom CSS is not available on this account.",
+      "NOT_ENTITLED",
+    );
+  }
+
+  const normalized = rawCss.replace(/\r\n/g, "\n");
+  if (normalized.length > MAX_CUSTOM_CSS_LENGTH) {
+    throw new CustomCssError(
+      `Custom CSS exceeds the ${MAX_CUSTOM_CSS_LENGTH.toLocaleString()}-character limit.`,
+      "INVALID_CSS",
+    );
+  }
+
+  const compiled = compileCustomCss(normalized);
+  if (!compiled.ok) {
+    const first = compiled.diagnostics[0];
+    throw new CustomCssError(
+      first ? `Line ${first.line}:${first.column} — ${first.message}` : "Custom CSS has errors.",
+      "INVALID_CSS",
+    );
+  }
+
+  const now = new Date();
+  await db
+    .insert(profileCustomCss)
+    .values({
+      profileId: row.profileId,
+      draftCss: normalized,
+      updatedAt: now,
+    })
+    .onConflictDoUpdate({
+      target: profileCustomCss.profileId,
+      set: { draftCss: normalized, updatedAt: now },
+    });
+
+  await touchDraft(row.profileId);
+  return { draftCss: normalized, compiledCss: compiled.css };
 }
 
 export async function updateIdentity(
@@ -251,10 +466,6 @@ export async function deleteLink(profileId: string, linkId: string) {
   return deleted.length > 0;
 }
 
-/**
- * Reorders links atomically. Accepts the full ordered list of link ids that
- * belong to the profile; unknown or foreign ids are ignored.
- */
 export async function reorderLinks(profileId: string, orderedIds: string[]) {
   if (orderedIds.length === 0) return;
 
@@ -275,7 +486,6 @@ export async function reorderLinks(profileId: string, orderedIds: string[]) {
   });
 }
 
-/** Records a click for analytics; never throws for the visitor. */
 export async function recordLinkClick(profileId: string, linkId: string) {
   await db
     .update(profileLinks)
@@ -288,7 +498,7 @@ async function touchDraft(profileId: string) {
 }
 
 // ---------------------------------------------------------------------------
-// Publish
+// Publish, history, diff & append-only restore
 // ---------------------------------------------------------------------------
 
 export type PublishResult = {
@@ -298,13 +508,12 @@ export type PublishResult = {
 };
 
 /**
- * Publishes the current draft.
- *
- * Everything happens in one transaction: version row, immutable snapshot, and
- * the pointer visitors resolve. If any step fails, the previously published
- * profile stays live untouched.
+ * Publishes the current draft atomically: validates config and (if present)
+ * custom CSS, snapshots everything into `profile_versions` and
+ * `profiles.publishedSnapshot`, updates `profile_custom_css.published_css`, and
+ * bumps `revision`.
  */
-export async function publishProfile(userId: string): Promise<PublishResult> {
+export async function publishProfile(userId: string, label?: string): Promise<PublishResult> {
   return db.transaction(async (tx) => {
     const profileRows = await tx
       .select()
@@ -321,18 +530,47 @@ export async function publishProfile(userId: string): Promise<PublishResult> {
     if (!user) throw new Error("User not found");
     if (user.status !== "ACTIVE") throw new Error("Cannot publish: account is not active");
 
-    const links = await tx
-      .select()
-      .from(profileLinks)
-      .where(and(eq(profileLinks.profileId, profile.id), eq(profileLinks.visible, true)))
-      .orderBy(asc(profileLinks.position), asc(profileLinks.createdAt));
+    const [links, cssRows] = await Promise.all([
+      tx
+        .select()
+        .from(profileLinks)
+        .where(and(eq(profileLinks.profileId, profile.id), eq(profileLinks.visible, true)))
+        .orderBy(asc(profileLinks.position), asc(profileLinks.createdAt)),
+      tx
+        .select()
+        .from(profileCustomCss)
+        .where(eq(profileCustomCss.profileId, profile.id))
+        .limit(1),
+    ]);
+
+    const cssRow = cssRows[0];
+    const draftCss = cssRow?.draftCss ?? "";
+    const entitlements = getEntitlements({ id: user.id, role: user.role });
+
+    let nextPublishedCss: string | null = null;
+    if (draftCss.trim() && entitlements.canPublishCustomCss) {
+      const compiled = compileCustomCss(draftCss);
+      if (!compiled.ok) {
+        const first = compiled.diagnostics[0];
+        throw new CustomCssError(
+          first ? `Custom CSS error at line ${first.line}: ${first.message}` : "Custom CSS has errors.",
+          "INVALID_CSS",
+        );
+      }
+      nextPublishedCss = draftCss;
+    }
 
     const [{ nextVersion }] = await tx
       .select({ nextVersion: sql<number>`coalesce(max(${profileVersions.version}), 0) + 1` })
       .from(profileVersions)
       .where(eq(profileVersions.profileId, profile.id));
 
-    const snapshot = {
+    const version = Number(nextVersion);
+    const now = new Date();
+    const revision = profile.revision + 1;
+    const cleanLabel = label?.trim().slice(0, 80) || null;
+
+    const snapshot: StoredSnapshot = {
       config: normalizeProfileConfig(profile.draftConfig),
       identity: {
         usernameDisplay: user.usernameDisplay,
@@ -350,89 +588,116 @@ export async function publishProfile(userId: string): Promise<PublishResult> {
         icon: link.icon,
         highlight: link.highlight,
       })),
-      themeSlug: profile.themeSlug,
-      publishedAt: new Date().toISOString(),
+      ...(cleanLabel ? { label: cleanLabel } : {}),
+      ...(nextPublishedCss ? { customCss: nextPublishedCss } : {}),
+      publishedAt: now.toISOString(),
     };
 
     await tx.insert(profileVersions).values({
       profileId: profile.id,
-      version: Number(nextVersion),
+      version,
       snapshot,
     });
 
-    const [updated] = await tx
+    await tx
       .update(profiles)
       .set({
         publishedSnapshot: snapshot,
-        publishedAt: new Date(),
-        revision: sql`${profiles.revision} + 1`,
+        publishedAt: now,
+        revision,
+        updatedAt: now,
       })
-      .where(eq(profiles.id, profile.id))
-      .returning();
+      .where(eq(profiles.id, profile.id));
 
-    return {
-      version: Number(nextVersion),
-      publishedAt: updated.publishedAt!,
-      revision: updated.revision,
-    };
+    if (cssRow || nextPublishedCss !== null) {
+      await tx
+        .insert(profileCustomCss)
+        .values({
+          profileId: profile.id,
+          draftCss,
+          publishedCss: nextPublishedCss,
+          updatedAt: now,
+        })
+        .onConflictDoUpdate({
+          target: profileCustomCss.profileId,
+          set: { publishedCss: nextPublishedCss, updatedAt: now },
+        });
+    }
+
+    return { version, publishedAt: now, revision };
   });
 }
 
-/** Reverts the live profile to a previous snapshot by publishing a new version. */
+/**
+ * Restores a previous published version by copying its config, identity, links,
+ * and optional custom CSS back into the draft and publishing as a new version
+ * (strictly append-only — past versions are never deleted or overwritten).
+ */
 export async function restoreVersion(userId: string, versionId: string): Promise<PublishResult> {
   const profile = await getProfileForUser(userId);
   if (!profile) throw new Error("Profile not found");
 
-  const rows = await db
+  const versionRows = await db
     .select()
     .from(profileVersions)
     .where(and(eq(profileVersions.id, versionId), eq(profileVersions.profileId, profile.id)))
     .limit(1);
-
-  const target = rows[0];
+  const target = versionRows[0];
   if (!target) throw new Error("Version not found");
 
-  // Restore means: copy the old snapshot back into the draft, then publish.
-  // This keeps history append-only — nothing is ever rewritten.
-  const snapshot = target.snapshot as { config?: unknown; identity?: Record<string, unknown>; links?: PublicLink[] };
-  await db
-    .update(profiles)
-    .set({ draftConfig: snapshot.config ?? {}, draftUpdatedAt: new Date() })
-    .where(eq(profiles.id, profile.id));
-
-  const identity = snapshot.identity ?? {};
-  await db
-    .update(users)
-    .set({
-      displayName: (identity.displayName as string | null) ?? null,
-      bio: (identity.bio as string | null) ?? null,
-      avatarUrl: (identity.avatarUrl as string | null) ?? null,
-    })
-    .where(eq(users.id, userId));
-
-  await db
-    .update(profiles)
-    .set({
-      headline: (identity.headline as string | null) ?? null,
-      location: (identity.location as string | null) ?? null,
-      statusText: (identity.statusText as string | null) ?? null,
-    })
-    .where(eq(profiles.id, profile.id));
-
-  // Links are restored as a set to keep ids stable where possible.
-  const snapshotLinks: PublicLink[] = Array.isArray(snapshot.links) ? snapshot.links : [];
-  const existing = await db.select().from(profileLinks).where(eq(profileLinks.profileId, profile.id));
-  const existingById = new Map(existing.map((l) => [l.id, l]));
+  const snapshot = target.snapshot as Partial<StoredSnapshot>;
+  const normalizedConfig = normalizeProfileConfig(snapshot.config);
+  const snapshotLinks = Array.isArray(snapshot.links) ? snapshot.links : [];
+  const rawRestoredCss = typeof snapshot.customCss === "string" ? snapshot.customCss : "";
+  const safeRestoredCss =
+    rawRestoredCss.trim() && compileCustomCss(rawRestoredCss).ok ? rawRestoredCss : "";
 
   await db.transaction(async (tx) => {
+    const now = new Date();
+    await tx
+      .update(profiles)
+      .set({
+        draftConfig: normalizedConfig,
+        headline: snapshot.identity?.headline ?? profile.headline,
+        location: snapshot.identity?.location ?? profile.location,
+        statusText: snapshot.identity?.statusText ?? profile.statusText,
+        draftUpdatedAt: now,
+      })
+      .where(eq(profiles.id, profile.id));
+
+    if (snapshot.identity) {
+      await tx
+        .update(users)
+        .set({
+          displayName: snapshot.identity.displayName ?? undefined,
+          bio: snapshot.identity.bio ?? undefined,
+          avatarUrl: snapshot.identity.avatarUrl ?? null,
+        })
+        .where(eq(users.id, userId));
+    }
+
+    // Reconcile links (keep existing IDs when present so click counts survive rollback).
+    const existing = await tx
+      .select()
+      .from(profileLinks)
+      .where(eq(profileLinks.profileId, profile.id));
+    const existingById = new Map(existing.map((l) => [l.id, l]));
     const keep = new Set<string>();
+
     for (const [index, link] of snapshotLinks.entries()) {
       const current = existingById.get(link.id);
       if (current) {
         keep.add(current.id);
         await tx
           .update(profileLinks)
-          .set({ label: link.label, url: link.url, icon: link.icon, highlight: link.highlight, visible: true, position: index })
+          .set({
+            label: link.label,
+            url: link.url,
+            icon: link.icon,
+            highlight: link.highlight,
+            visible: true,
+            position: index,
+          })
           .where(eq(profileLinks.id, current.id));
       } else {
         const [inserted] = await tx
@@ -455,23 +720,88 @@ export async function restoreVersion(userId: string, versionId: string): Promise
         await tx.delete(profileLinks).where(eq(profileLinks.id, link.id));
       }
     }
+
+    // Restore custom CSS state (clearing it if the target version had none).
+    const existingCss = await tx
+      .select({ profileId: profileCustomCss.profileId })
+      .from(profileCustomCss)
+      .where(eq(profileCustomCss.profileId, profile.id))
+      .limit(1);
+    if (existingCss.length > 0 || safeRestoredCss) {
+      await tx
+        .insert(profileCustomCss)
+        .values({
+          profileId: profile.id,
+          draftCss: safeRestoredCss,
+          publishedCss: safeRestoredCss || null,
+          updatedAt: now,
+        })
+        .onConflictDoUpdate({
+          target: profileCustomCss.profileId,
+          set: {
+            draftCss: safeRestoredCss,
+            publishedCss: safeRestoredCss || null,
+            updatedAt: now,
+          },
+        });
+    }
   });
 
-  return publishProfile(userId);
+  return publishProfile(userId, `Restored from v${target.version}`);
 }
 
 export async function listVersions(profileId: string, limit = 20) {
   const rows = await db
-    .select({ id: profileVersions.id, version: profileVersions.version,
-      createdAt: profileVersions.createdAt, snapshot: profileVersions.snapshot })
+    .select({
+      id: profileVersions.id,
+      version: profileVersions.version,
+      createdAt: profileVersions.createdAt,
+      snapshot: profileVersions.snapshot,
+    })
     .from(profileVersions)
     .where(eq(profileVersions.profileId, profileId))
     .orderBy(desc(profileVersions.version))
     .limit(limit + 1);
-  return rows.slice(0, limit).map((row, index) => ({
-    id: row.id, version: row.version, createdAt: row.createdAt,
-    changes: diffSnapshots(rows[index + 1]?.snapshot ?? {}, row.snapshot),
-  }));
+
+  return rows.slice(0, limit).map((row, index) => {
+    const snap = row.snapshot as Partial<StoredSnapshot> | null;
+    const prev = rows[index + 1];
+    return {
+      id: row.id,
+      version: row.version,
+      label: typeof snap?.label === "string" ? snap.label : null,
+      createdAt: row.createdAt,
+      previousVersion: prev?.version ?? null,
+      changes: prev ? diffSnapshots(prev.snapshot, row.snapshot) : diffSnapshots({}, row.snapshot),
+    };
+  });
+}
+
+export async function compareVersions(
+  profileId: string,
+  versionId: string,
+  baselineVersionId?: string,
+): Promise<{ previousVersion: number | null; changes: RevisionChange[] } | null> {
+  const target = await getVersion(profileId, versionId);
+  if (!target) return null;
+
+  let baseline: typeof target | null = null;
+  if (baselineVersionId) {
+    baseline = await getVersion(profileId, baselineVersionId);
+  } else {
+    const rows = await db
+      .select()
+      .from(profileVersions)
+      .where(and(eq(profileVersions.profileId, profileId), sql`${profileVersions.version} < ${target.version}`))
+      .orderBy(desc(profileVersions.version))
+      .limit(1);
+    baseline = rows[0] ?? null;
+  }
+
+  return {
+    previousVersion: baseline?.version ?? null,
+    changes: baseline ? diffSnapshots(baseline.snapshot, target.snapshot) : [],
+  };
 }
 
 export async function getVersion(profileId: string, versionId: string) {

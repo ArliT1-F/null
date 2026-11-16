@@ -1,10 +1,9 @@
 import type { Metadata } from "next";
 import { redirect } from "next/navigation";
-import { EmptyState } from "@/components/ui";
 import { ShieldAlert } from "lucide-react";
+import { EmptyState } from "@/components/ui";
 import { getCurrentUser } from "@/lib/auth/session";
 import { getEditorData, listVersions } from "@/lib/profiles/service";
-import { normalizeProfileConfig } from "@/lib/profile-config";
 import { listThemes } from "@/lib/themes";
 import { EditorClient } from "./editor-client";
 
@@ -13,10 +12,9 @@ export const metadata: Metadata = { title: "Editor", robots: { index: false, fol
 /**
  * Editor entry point.
  *
- * The server resolves the owner's data and hands the client a fully-formed,
- * validated initial state — so the editor never renders a loading skeleton or an
- * empty canvas, and the client cannot be tricked into editing someone else's
- * profile (all mutations re-resolve the session server-side).
+ * Resolves the authenticated owner's draft configuration, links, custom CSS
+ * draft, entitlements, saved themes, curated presets, and published revisions
+ * on the server so the visual canvas paints immediately with zero client waterfalls.
  */
 export default async function EditorPage() {
   const user = await getCurrentUser();
@@ -33,38 +31,44 @@ export default async function EditorPage() {
     );
   }
 
-  const [themes, versions] = await Promise.all([listThemes(), listVersions(data.profile.id, 12)]);
+  const [themes, versions] = await Promise.all([
+    listThemes(),
+    listVersions(data.profile.id, 20),
+  ]);
 
   const draftDirty = data.profile.draftUpdatedAt > (data.profile.publishedAt ?? new Date(0));
 
   return (
     <EditorClient
-      username={user.username}
-      usernameDisplay={user.usernameDisplay}
-      identity={{
-        displayName: data.user.displayName ?? data.user.usernameDisplay,
-        bio: data.user.bio ?? "",
-        headline: data.profile.headline ?? "",
-        location: data.profile.location ?? "",
-        statusText: data.profile.statusText ?? "",
+      user={{
+        id: user.id,
+        username: user.username,
+        usernameDisplay: user.usernameDisplay,
+        displayName: data.user.displayName,
         avatarUrl: data.user.avatarUrl,
-        visibility: data.profile.visibility,
       }}
-      initialConfig={normalizeProfileConfig(data.profile.draftConfig)}
-      initialLinks={data.links.map((l) => ({
-        id: l.id,
-        label: l.label,
-        url: l.url,
-        icon: l.icon,
-        highlight: l.highlight,
-        visible: l.visible,
+      profile={{
+        bio: data.user.bio,
+        headline: data.profile.headline,
+        location: data.profile.location,
+        statusText: data.profile.statusText,
+        visibility: data.profile.visibility,
+        themeSlug: data.profile.themeSlug,
+        publishedAt: data.profile.publishedAt?.toISOString() ?? null,
+        draftDirty,
+      }}
+      initialDraft={data.config}
+      initialLinks={data.links}
+      initialCustomCss={data.customCss}
+      entitlements={data.entitlements}
+      initialSavedThemes={data.savedThemes}
+      themes={themes}
+      versions={versions.map((v) => ({
+        id: v.id,
+        version: v.version,
+        label: v.label,
+        createdAt: v.createdAt.toISOString(),
       }))}
-      themes={themes.map((t) => ({ slug: t.slug, name: t.name, category: t.category, tokens: t.tokens }))}
-      activeThemeSlug={data.profile.themeSlug}
-      versions={versions.map((v) => ({ id: v.id, version: v.version, createdAt: v.createdAt.toISOString(), changes: v.changes }))}
-      publishedAt={data.profile.publishedAt?.toISOString() ?? null}
-      revision={data.profile.revision}
-      draftDirty={draftDirty}
     />
   );
 }

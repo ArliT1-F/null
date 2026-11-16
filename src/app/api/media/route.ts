@@ -1,26 +1,20 @@
 import { NextResponse } from "next/server";
 import { getCurrentUser } from "@/lib/auth/session";
-import { MediaError, storeImage, type MediaKind } from "@/lib/media";
+import { MediaError, storeFont, storeImage, storeVideo, type MediaKind } from "@/lib/media";
 import { LIMITS, consume } from "@/lib/rate-limit";
 import { isAllowedOrigin } from "@/lib/request";
 
 /**
- * POST /api/media — upload an image. See docs/API.md.
+ * POST /api/media — upload verified media (images, custom fonts, background videos).
  *
- * The editor posts multipart/form-data here (`file` + `kind`) and expects
- * `{ ok, id, url, width, height, size }` back. Validation happens by content,
- * not by name or declared type: `storeImage` decodes the bytes with sharp,
- * re-encodes them, and rejects anything it cannot read, so a renamed script or
- * a PDF never reaches storage.
- *
- * Node runtime is required — sharp and the local storage provider touch the
- * filesystem.
+ * The editor posts `multipart/form-data` here (`file` + `kind`) and receives
+ * `{ ok, id, url, width, height, size }`. Validation happens strictly by binary
+ * content, never by filename or declared MIME type.
  */
 
 export const runtime = "nodejs";
 
-/** Kinds the editor can upload today (AUDIO/DOCUMENT have no upload path yet). */
-const UPLOAD_KINDS = ["AVATAR", "BACKGROUND", "GALLERY"] as const;
+const UPLOAD_KINDS = ["AVATAR", "BACKGROUND", "GALLERY", "FONT", "VIDEO"] as const;
 
 function fail(message: string, status: number, headers?: Record<string, string>) {
   return NextResponse.json({ ok: false, error: message }, { status, headers });
@@ -32,7 +26,7 @@ export async function POST(request: Request) {
   }
 
   const user = await getCurrentUser();
-  if (!user) return fail("Sign in to upload images.", 401);
+  if (!user) return fail("Sign in to upload media.", 401);
 
   const limit = consume(`upload:${user.id}`, LIMITS.upload.limit, LIMITS.upload.windowMs);
   if (!limit.allowed) {
@@ -59,19 +53,26 @@ export async function POST(request: Request) {
   }
 
   try {
-    const { asset, url } = await storeImage(file, kind as MediaKind, user.id);
+    const { asset, url } =
+      kind === "FONT"
+        ? await storeFont(file as File, user.id)
+        : kind === "VIDEO"
+          ? await storeVideo(file as File, user.id)
+          : await storeImage(file as File, kind as MediaKind, user.id);
+
     return NextResponse.json({
       ok: true,
       id: asset.id,
       url,
-      width: asset.width,
-      height: asset.height,
+      ...(asset.width !== undefined ? { width: asset.width } : {}),
+      ...(asset.height !== undefined ? { height: asset.height } : {}),
+      ...(asset.mimeType ? { mimeType: asset.mimeType } : {}),
       size: asset.sizeBytes,
     });
   } catch (error) {
     if (error instanceof MediaError) return fail(error.message, error.status);
-    // Never leak internals (paths, sharp messages) to the browser.
+    // Never leak internals (paths, parser messages) to the browser.
     console.error("[media] upload failed", error);
-    return fail("The image could not be stored. Try again.", 500);
+    return fail("The file could not be stored. Try again.", 500);
   }
 }

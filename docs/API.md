@@ -45,12 +45,13 @@ reserved names.
 
 ### `POST /api/media`
 
-Upload an image. **Authentication required.** `multipart/form-data`:
+Upload a verified media asset (image, web font, or looping video).
+**Authentication and same-origin `Origin` required.** `multipart/form-data`:
 
 | Field | Type | Notes |
 | --- | --- | --- |
-| `file` | File | PNG, JPEG, WebP, AVIF or GIF |
-| `kind` | `AVATAR` \| `BACKGROUND` \| `GALLERY` | size limits differ per kind |
+| `file` | File | Image (`PNG`, `JPEG`, `WebP`, `AVIF`, `GIF`), Font (`WOFF2`, `WOFF`, `TTF`, `OTF`, ≤ 2 MB), or Video (`MP4`, `WebM`, ≤ 12 MB) |
+| `kind` | `AVATAR` \| `BACKGROUND` \| `GALLERY` \| `FONT` \| `VIDEO` | binary signature verified server-side |
 
 ```json
 {
@@ -63,8 +64,10 @@ Upload an image. **Authentication required.** `multipart/form-data`:
 }
 ```
 
+Font and video uploads return `width: null` and `height: null`.
+
 Errors: `401` unauthenticated, `403` cross-origin request, `400` invalid kind or
-undecodable file, `413` too large, `429` rate limited (30/hour per user).
+failed binary verification, `413` too large, `429` rate limited (30/hour per user).
 
 ### `DELETE /api/media/:id`
 
@@ -77,10 +80,23 @@ that do not exist **or do not belong to the caller**.
 
 ### `GET /api/media/[...key]`
 
-Serves a stored object. Keys are generated server-side; the route rejects
-traversal attempts. Responds with `Cache-Control: public, max-age=31536000,
-immutable`, `X-Content-Type-Options: nosniff` and a sandboxing CSP. `404` when the
-object is absent.
+Serves a stored image, font, or video object. Keys are restricted to allowlisted
+roots and reject traversal attempts. Supports single-range `Range: bytes=start-end`
+requests (`206 Partial Content`, or `416 Range Not Satisfiable` with
+`Content-Range: bytes */<size>`). Responds with `Cache-Control: public,
+max-age=31536000, immutable`, `X-Content-Type-Options: nosniff`,
+`Cross-Origin-Resource-Policy: cross-origin`, narrow CORS for
+`PRO_CSS_SANDBOX_ORIGIN` only, and `Content-Security-Policy: default-src 'none';
+sandbox`. `404` when absent.
+
+### `GET /sandbox/profile/:username`
+
+Separate-origin, zero-JavaScript HTML renderer for profiles with published Pro
+custom CSS. Returns `404` unless `FEATURE_PRO_CSS=true`, a distinct
+`PRO_CSS_SANDBOX_ORIGIN` is configured, and the profile has published custom CSS;
+returns `403` unless the incoming `Host` / `X-Forwarded-Host` matches
+`PRO_CSS_SANDBOX_ORIGIN` (never `APP_URL`). Emits `Content-Security-Policy:
+default-src 'none'; ...; frame-ancestors <APP_URL>`.
 
 ## Pages with dynamic behaviour
 
@@ -113,12 +129,15 @@ exported from feature directories and always begin with a session check.
 
 | Action | Effect |
 | --- | --- |
-| `saveDraftConfig(config)` | Validates and stores the draft appearance |
-| `saveIdentity(fields)` | Display name, bio, headline, location, status, visibility |
-| `applyTheme(slug, tokens)` | Applies a catalogue theme to the draft |
-| `addLink` / `editLink` / `removeLink` / `moveLink` | Link CRUD and ordering |
-| `publishAction` | Publishes the draft as the next immutable version |
-| `restoreVersionAction(id)` | Copies an old snapshot into the draft and publishes it |
+| `saveDraftAction(config)` | Validates and stores the Config v2 draft (theme, layout, canvas, blocks, groups, breakpoints) |
+| `saveCustomCssAction(rawCss)` | Entitlement-checked; compiles, scopes, and saves Pro custom CSS draft |
+| `saveIdentityAction(fields)` | Display name, bio, headline, location, status, avatar, visibility |
+| `applyThemeAction(slug)` | Applies a curated theme without overwriting blocks, groups, or layout |
+| `saveCustomThemeAction` / `applySavedThemeAction` / `deleteSavedThemeAction` | User-saved theme presets |
+| `createLinkAction` / `updateLinkAction` / `deleteLinkAction` / `reorderLinksAction` | Link CRUD and ordering |
+| `publishAction(label?)` | Atomically publishes draft + custom CSS as the next immutable version |
+| `versionDiffAction(versionId, baselineId?)` | Bounded before/after diff against previous or chosen revision |
+| `restoreVersionAction(versionId)` | Restores snapshot + custom CSS into draft and publishes as version `N + 1` |
 
 All return `{ ok: true, data? }` or `{ ok: false, error, field? }`.
 

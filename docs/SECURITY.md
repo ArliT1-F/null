@@ -48,30 +48,45 @@ The most important surface, because profiles are user-designed pages.
 
 | Risk | Mitigation |
 | --- | --- |
-| CSS injection | Appearance is stored as tokens (hex colours, enums, bounded numbers) validated by Zod; raw CSS is never stored |
-| Selector escape | The generated stylesheet prefixes every selector with `.null-profile` |
-| XSS in text fields | React escapes all output; no `dangerouslySetInnerHTML` receives user text (only generated CSS and a JSON-LD object built from typed fields) |
+| CSS injection (structured profiles) | Appearance is stored as tokens (hex colours, enums, bounded numbers) validated by Zod; raw CSS is never stored in `ProfileConfig` |
+| Selector escape | `buildProfileCss()` and `compileCustomCss()` prefix every selector with `.null-profile` and escape `</style>` |
+| Pro custom CSS isolation | Stored in `profile_custom_css`; gated by `getEntitlements()`; escape-aware zero-FS compiler blocks `@import`, `@font-face`, `url()`, `image-set()`, `expression()`, `data:`/`javascript:`, `position: fixed`, sensitive attribute selectors, and HTML comments; served publicly **only** from `PRO_CSS_SANDBOX_ORIGIN` (`Host` verified, 0 `<script>` tags, `default-src 'none'` CSP) inside `<iframe sandbox="allow-popups allow-popups-to-escape-sandbox">`, and previewed in the editor inside `<iframe sandbox="" srcDoc>` |
+| Third-party embeds | Allowlisted strictly to YouTube (`youtube-nocookie.com`), Vimeo, Spotify, and SoundCloud HTTPS player URLs with `referrerPolicy="no-referrer"` and sandboxed iframes |
+| Third-party font tracking | Curated Google Fonts are self-hosted via `@fontsource-variable/*`; custom `@font-face` accepts only verified same-origin uploaded fonts |
+| XSS in text fields | React escapes all output (and `buildSandboxedProfileDocument` HTML-escapes every user field); no raw user HTML is ever rendered |
 | `javascript:` URLs | Link URLs are restricted to `http`, `https`, `mailto` at write time and rejected again by the test suite |
 | Tabnabbing | External links render with `rel="noopener noreferrer nofollow"` |
-| Script execution | No user JavaScript is executed on the application origin; there is no eval, no dynamic import from data, no iframe |
+| Script execution | Zero user JavaScript is accepted or executed anywhere; no eval or dynamic import from user data |
 | Icon injection | Icons are stored as enum keys mapped to a static component registry |
 
-`tests/profile-config.test.ts` asserts that hostile colour values are rejected and
-that every emitted selector is scoped.
+`tests/profile-config.test.ts`, `tests/v2-config-css.test.ts`,
+`tests/custom-css.test.ts`, and `tests/sandbox-entitlements.test.ts` assert
+token validation, selector scoping, escape-aware CSS rejection, and sandbox host
+isolation.
 
 ## Uploads
 
-1. Authentication is checked **before** the body is parsed.
-2. Per-kind limits: avatars ≤ 5 MB / 4096 px, backgrounds ≤ 12 MB / 8192 px.
-3. Bytes are decoded by `sharp` with `limitInputPixels` set; anything undecodable
-   is rejected (a renamed `.exe` or a PDF never reaches storage).
-4. The image is **re-encoded from decoded pixels**, discarding EXIF (including GPS),
-   embedded thumbnails and any appended payload.
-5. Storage keys are server-generated and validated against a character whitelist
-   that rejects `..`, absolute paths, backslashes and control characters.
-6. Local writes go to a temporary file and are renamed into place.
-7. Media is served by `/api/media/...` with `X-Content-Type-Options: nosniff` and
-   `Content-Security-Policy: default-src 'none'; sandbox`.
+1. Authentication and `Origin` are checked **before** the body is parsed.
+2. Per-kind limits: `AVATAR` ≤ 5 MB / 4096 px, `GALLERY` ≤ 8 MB / 6144 px,
+   `BACKGROUND` ≤ 12 MB / 8192 px, `FONT` ≤ 2 MB, `VIDEO` ≤ 12 MB.
+3. **Images** are decoded by `sharp` with `limitInputPixels` set and re-encoded
+   from decoded pixels into WebP, discarding EXIF/GPS, thumbnails, and trailing data.
+4. **Fonts** (`WOFF2`, `WOFF`, `TTF`, `OTF`) are inspected byte-for-byte
+   (`verifyFontBuffer`) for container signatures, declared lengths, required
+   OpenType tables, and absence of `SVG ` tables (preventing OpenType-SVG script/markup
+   payloads).
+5. **Videos** (`MP4`, `WebM`) are inspected (`verifyVideoBuffer`) for allowlisted
+   ISO BMFF `ftyp` brands + intact `moov`/`mdat` boxes or EBML header with
+   `DocType === "webm"` + Matroska `Segment` — client `Content-Type` and filenames
+   are never trusted.
+6. Storage keys are server-generated under allowlisted root folders and validated
+   against a strict whitelist rejecting `..`, absolute paths, backslashes, and
+   control characters; local writes use atomic temp-file + rename.
+7. Media is served by `/api/media/...` with `X-Content-Type-Options: nosniff`,
+   `Content-Security-Policy: default-src 'none'; sandbox`,
+   `Cross-Origin-Resource-Policy: cross-origin`, bounded HTTP `Range` (`206`/`416`),
+   and `Access-Control-Allow-Origin` emitted solely for `PRO_CSS_SANDBOX_ORIGIN`
+   (or opaque `null` for the editor's sandboxed preview iframe) — never `*`.
 
 ## Input validation and output
 

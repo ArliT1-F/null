@@ -11,25 +11,32 @@ not by network boundaries, because the target hardware is a home desktop with
 src/
 ├── app/                    Routing, pages, route handlers, server actions
 │   ├── (auth)/             Register, login, reset, verify — grouped, no URL segment
-│   ├── [username]/         Public profile (SSR) + generated OG image
-│   ├── dashboard/          Authenticated shell: overview, editor, media, settings
-│   ├── api/                JSON endpoints: health, media, username availability
+│   ├── [username]/         Public profile (SSR, stack/canvas) + generated OG image
+│   ├── sandbox/            Separate-origin scriptless Pro CSS document route
+│   ├── dashboard/          Authenticated shell: overview, 3-panel editor, settings
+│   ├── api/                JSON & media endpoints: health, media (Range), track, username
 │   ├── docs/ legal/        Documentation and legal pages
 │   └── robots.ts sitemap.ts
-├── components/             Presentation components (ui, profile, chrome)
+├── components/             Presentation components (ui, profile renderer/video, chrome)
 ├── db/
-│   ├── schema.ts           Drizzle table definitions + inferred types
+│   ├── schema.ts           Drizzle table definitions + inferred types (incl. V2 tables)
 │   ├── client.ts           Connection pool (singleton, small max)
-│   ├── migrations/         Versioned SQL, applied by the migrator
-│   └── seed.ts             Idempotent theme/admin seed
+│   ├── migrations/         Versioned SQL (0000 foundation, 0001 V2 customisation)
+│   └── seed.ts             Idempotent 20-theme + dev admin seed
 └── lib/
-    ├── env.ts              Validated configuration contract
+    ├── env.ts              Validated configuration & cross-origin sandbox contract
+    ├── entitlements.ts     Centralised plan & feature-flag resolver
     ├── auth/session.ts     Sessions, current user, audit helper
-    ├── profiles/service.ts Profile domain: drafts, publishing, links, usernames
-    ├── storage/            StorageProvider + Local and S3 implementations
-    ├── media.ts            Upload validation, re-encoding, variant generation
-    ├── profile-config.ts   Zod schema for presentation tokens
-    ├── profile-css.ts      Token → scoped stylesheet
+    ├── profiles/service.ts Profile domain: drafts, publishing, diffs, themes, Pro CSS
+    ├── storage/            StorageProvider (Local + S3, incl. byte-range streaming)
+    ├── media-verify.ts     Binary WOFF2/WOFF/TTF/OTF & MP4/WebM container verifiers
+    ├── media.ts            Upload validation, image re-encoding, font/video storage
+    ├── profile-config.ts   Zod Config v2 schema (tokens, blocks, groups, canvas, breakpoints)
+    ├── profile-css.ts      Token → scoped `.null-profile` stylesheet + `@font-face`
+    ├── profile-diff.ts     Bounded before/after revision diffing
+    ├── canvas-guides.ts    Freeform canvas clamping, grid snap & alignment guides
+    ├── custom-css.ts       Zero-FS custom CSS parser, linter & `.null-profile` scoper
+    ├── sandbox.ts          Scriptless HTML builder, `default-src 'none'` CSP & host guard
     ├── password.ts         Argon2id hashing
     ├── crypto.ts           Token hashing, AES-GCM, IP hashing
     ├── rate-limit.ts       Fixed-window limiter
@@ -119,31 +126,45 @@ A profile owns a `ProfileConfig` validated by Zod:
 chrome, or exfiltrate anything. `tests/profile-config.test.ts` asserts both the
 injection resistance of the schema and the scoping of the generated CSS.
 
-If user CSS is added later (V2 roadmap), it belongs in a sandboxed iframe on a
-separate origin — not on the application origin.
+If a profile carries Pro custom CSS (`FEATURE_PRO_CSS=true` plus a distinct
+`PRO_CSS_SANDBOX_ORIGIN`), the stylesheet is stored separately in
+`profile_custom_css` (never in `ProfileConfig`), compiled and scoped to
+`.null-profile` with external resource loading forbidden (`src/lib/custom-css.ts`),
+and rendered exclusively from `GET /sandbox/profile/[username]` on
+`PRO_CSS_SANDBOX_ORIGIN` inside `<iframe sandbox="allow-popups allow-popups-to-escape-sandbox">`
+with a scriptless `default-src 'none'` CSP. Custom CSS never touches `APP_URL`.
 
 ## Storage abstraction
 
-`StorageProvider` (`put`, `get`, `getBuffer`, `delete`, `exists`, `publicUrl`)
-has two implementations:
+`StorageProvider` (`put`, `get`, `getRange`, `getBuffer`, `delete`, `exists`,
+`publicUrl`) has two implementations:
 
 - `LocalStorageProvider` — writes under `MEDIA_ROOT`, rejects traversal, writes
-  via temp file + rename so partial uploads never appear.
-- `S3StorageProvider` — Cloudflare R2 / MinIO / AWS S3; optional CDN base URL.
+  via temp file + rename so partial uploads never appear, and streams byte slices
+  via bounded `createReadStream({ start, end })`.
+- `S3StorageProvider` — Cloudflare R2 / MinIO / AWS S3; supports `Range` reads
+  on `GetObjectCommand` and an optional CDN base URL.
 
 `STORAGE_DRIVER` selects one at runtime. No application code contains a
 filesystem path or a bucket URL.
 
 ## Media pipeline
 
-1. Auth is checked before the request body is read.
-2. Size and dimension limits are enforced per media kind.
-3. `sharp` decodes the bytes. A renamed executable or a PDF fails here.
-4. The image is re-encoded from decoded pixels — this strips EXIF (including
-   GPS), embedded thumbnails and any data appended to the file.
-5. Three sizes are written as WebP; the largest becomes the display image.
-6. Media is served through `/api/media/...` with `nosniff`,
-   `Content-Security-Policy: sandbox` and a one-year immutable cache.
+1. Auth and origin are checked before the request body is read.
+2. Size and dimension limits are enforced per media kind (`AVATAR` ≤ 5 MB,
+   `GALLERY` ≤ 8 MB, `BACKGROUND` ≤ 12 MB, `FONT` ≤ 2 MB, `VIDEO` ≤ 12 MB).
+3. **Images** are decoded by `sharp` (`limitInputPixels` enforced) and re-encoded
+   from decoded pixels into WebP variants, stripping EXIF/GPS and appended data.
+4. **Fonts** (`WOFF2`, `WOFF`, `TTF`, `OTF`) are verified in `src/lib/media-verify.ts`
+   for magic bytes, header bounds, required OpenType tables, and absence of
+   embedded `SVG ` tables. Self-hosted Google Fonts ship via `@fontsource-variable/*`.
+5. **Videos** (`MP4` ISO BMFF and `WebM` EBML) are verified for container brand,
+   atom boundaries, and presence of `moov`/`mdat` or `webm` `DocType` + `Segment`.
+6. Media is served through `/api/media/...` with `nosniff`, `Accept-Ranges: bytes`
+   (`206 Partial Content` / `416`), `Cross-Origin-Resource-Policy: cross-origin`,
+   narrow CORS restricted solely to `PRO_CSS_SANDBOX_ORIGIN` (and opaque editor
+   preview), `Content-Security-Policy: default-src 'none'; sandbox`, and a
+   one-year immutable cache.
 
 ## Security boundaries
 
