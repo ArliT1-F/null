@@ -148,6 +148,11 @@ links — to the server log. Copy the link into the browser.
   DOM rewrites by browser extensions — see "Hydration error about attributes"
   below. The suppression does not inherit, so it belongs on each element an
   extension can touch, not on a wrapper.
+- Hand-written svgs follow the same rule *per child*: a `<path>` or `<circle>`
+  that sets its own `stroke` needs the attribute itself. The flag on the parent
+  `<svg>` does **not** cover its children. Prefer inheriting paint from the
+  `<svg>` element (as `lucide-react` does) when you can — Dark Reader currently
+  rewrites `stroke` but leaves `fill` alone.
 
 ## Troubleshooting
 
@@ -171,13 +176,20 @@ between the server paint and hydration, and React compares against the already
 mutated markup. Confirm by reloading in a private window or with the extension
 disabled for `localhost` — the error disappears and nothing else changes.
 
-The app already opts the affected nodes out of that comparison (icons via
-`<Icon>`, inline-styled nodes on the profile preview/renderer via
-`suppressHydrationWarning`), so a *new* occurrence on your branch usually means a
-new icon was added directly from `lucide-react`, or a new inline `style` with a
-colour/background was introduced. Any other mismatch shape is a real bug: do
-not suppress it, fix the branch on `Date.now()`, `Math.random()` or locale
-formatting.
+The app already opts the affected nodes out of that comparison — icons via
+`<Icon>`, inline-styled nodes on the profile preview/renderer, and each svg child
+that carries its own `stroke`. So a *new* occurrence on your branch
+usually means one of those three patterns was reintroduced. To find the exact
+node, run this in the console and compare the entries with the error's diff:
+
+```js
+[...document.querySelectorAll('*')]
+  .filter((el) => [...el.attributes].some((a) => a.name.startsWith('data-darkreader')))
+  .forEach((el) => console.log(el.tagName, el.className, [...el.attributes].map((a) => a.name)));
+```
+
+Any other mismatch shape is a real bug: do not suppress it, fix the branch on
+`Date.now()`, `Math.random()` or locale formatting.
 
 **A public profile returns 500 after changing caching code** — almost certainly a
 date crossing a serialising cache boundary and coming back as a string. Wrap the
