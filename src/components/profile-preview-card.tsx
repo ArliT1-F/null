@@ -1,4 +1,5 @@
 import { Github, Globe, Instagram, Music, Twitch, Youtube } from "lucide-react";
+import { backgroundImageFor } from "@/lib/background-image";
 import type { ProfileConfig } from "@/lib/profile-config";
 import { themeToCssVars } from "@/lib/profile-config";
 import { Icon } from "@/components/ui";
@@ -38,6 +39,7 @@ export function ProfilePreviewCard({
 }) {
   const vars = themeToCssVars(config.theme, config.layout) as React.CSSProperties;
   const glow = config.theme.effects.glow;
+  const backgroundImage = backgroundImageFor(config.theme.background);
 
   return (
     <div
@@ -51,6 +53,18 @@ export function ProfilePreviewCard({
         fontSize: "var(--p-base-size)",
       }}
     >
+      {backgroundImage && (
+        <div
+           className="pointer-events-none absolute inset-0 bg-cover bg-center"
+           suppressHydrationWarning
+           style={{
+            backgroundImage: `linear-gradient(rgba(0,0,0,var(--p-bg-dim)), rgba(0,0,0,var(--p-bg-dim))), url("${backgroundImage}")`,
+            filter: "blur(var(--p-bg-blur))",
+            transform: "scale(1.06)",
+           }}
+           aria-hidden
+        />
+      )}
       {config.theme.background.type !== "solid" && (
         <div
           className="pointer-events-none absolute inset-0 opacity-70"

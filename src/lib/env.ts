@@ -39,7 +39,17 @@ const schema = z.object({
   SESSION_TTL_DAYS: int(30, 1, 365),
 
   STORAGE_DRIVER: z.enum(["local", "s3"]).default("local"),
-  MEDIA_ROOT: z.string().min(1).default("/srv/vessel/media"),
+  /**
+   * Where uploaded media lives. Deliberately *not* fixed here: production
+   * defaults to the container path, development to a repo-local `media/`
+   * directory (gitignored), so `npm run dev` works without configuring
+   * anything. A blank value is treated as unset — an empty line in a .env file
+   * must not become a path.
+  */
+  MEDIA_ROOT: z.preprocess(
+    (value) => (typeof value === "string" && value.trim() === "" ? undefined : value),
+    z.string().min(1).optional(),
+  ),
   MEDIA_PUBLIC_PREFIX: z.string().startsWith("/").default("/api/media"),
   MAX_UPLOAD_MB: int(12, 1, 256),
 
@@ -98,6 +108,7 @@ function load() {
 
   return {
     ...env,
+    MEDIA_ROOT: env.MEDIA_ROOT ?? (isProd ? "/srv/vessel/media" : "media"),
     isProduction: isProd,
     isDevelopment: env.NODE_ENV === "development",
     isTest: env.NODE_ENV === "test",

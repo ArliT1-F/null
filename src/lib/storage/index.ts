@@ -10,6 +10,12 @@ export { assertSafeKey, StorageNotFoundError } from "./types";
 
 let provider: StorageProvider | null = null;
 
+export function mediaRoot(): string {
+  const configured = typeof env.MEDIA_ROOT === "string" ? env.MEDIA_ROOT.trim() : "";
+  if (configured) return configured;
+  return env.isProduction ? "/srv/vessel/media" : "media";
+}
+
 /** The active storage backend, chosen purely by configuration. */
 export function getStorage(): StorageProvider {
   if (provider) return provider;

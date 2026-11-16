@@ -26,7 +26,7 @@ import { useCallback, useEffect, useMemo, useRef, useState, useTransition } from
 import { Button, Icon, Input, Spinner } from "@/components/ui";
 import { ProfileView, type RenderLink } from "@/components/profile/profile-renderer";
 import { normalizeProfileConfig, type ProfileConfig } from "@/lib/profile-config";
-import { backgroundImageUrl } from "@/app/dashboard/editor/preview-css";
+import { backgroundImageFor, safeBackgroundUrl } from "@/lib/background-image";
 import { cn } from "@/lib/utils";
 import {
   ColorControl,
@@ -169,7 +169,7 @@ export function EditorClient(props: EditorProps) {
     [links],
   );
 
-  const backgroundUrl = backgroundImageUrl(store.draft);
+  const backgroundUrl = backgroundImageFor(store.draft.theme.background);
 
   const preview = (
     <div
@@ -179,14 +179,14 @@ export function EditorClient(props: EditorProps) {
       )}
     >
       <div className="relative min-h-[520px] overflow-y-auto">
-        {backgroundUrl && (
-          <div
-            className="pointer-events-none absolute inset-0 bg-cover bg-center"
-            suppressHydrationWarning
-            style={{ backgroundImage: `url(${backgroundUrl})`, filter: `blur(${store.draft.theme.background.blur}px)`, transform: "scale(1.06)" }}
-          />
-        )}
         <div className="relative">
+          {/*
+            The background image layer is rendered *inside* `.vessel-profile` by
+            the profile stylesheet below (`buildLiveCss`), i.e. by the same code
+            path as the public page. An earlier version drew it as a sibling of
+            the profile, which painted it underneath `.vessel-profile`'s opaque
+            `--p-bg` fill and made every image invisible.
+          */}
           <ProfileView
             profile={{
               username: props.username,
@@ -204,6 +204,7 @@ export function EditorClient(props: EditorProps) {
               entrance: "none",
               appName: "Vessel",
             }}
+            backgroundUrl={backgroundUrl}
           />
         </div>
       </div>
@@ -548,6 +549,12 @@ function DesignPanel({
               onChange={(v) => set("theme.background.imageUrl", v || null)}
               placeholder="https://…"
             />
+            {theme.background.imageUrl && !safeBackgroundUrl(theme.background.imageUrl) ? (
+              <p className="text-[11px] text-amber-600 dark:text-amber-400">
+                That URL can&apos;t be used as a background. Use an <code>https://</code> link to an image, or
+                upload a file above.
+              </p>
+            ) : null}
           </>
         )}
         <RangeControl label="Blur" value={theme.background.blur} min={0} max={40} unit="px" onChange={(v) => set("theme.background.blur", v, true)} />

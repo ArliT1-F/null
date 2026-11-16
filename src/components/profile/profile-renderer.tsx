@@ -44,12 +44,21 @@ export type RenderProfile = {
   appName: string;
 };
 
-export function ProfileView({ profile, track }: { profile: RenderProfile; track?: boolean }) {
+export function ProfileView({
+  profile,
+  track,
+  backgroundUrl,
+}: {
+  profile: RenderProfile;
+  track?: boolean;
+  backgroundUrl?: string | null;
+}) {
   const animationClass =
     profile.entrance === "rise" ? "vp-anim-rise" : profile.entrance === "fade" ? "vp-anim-fade" : "";
 
   return (
     <div className="vessel-profile">
+      {backgroundUrl ? <div className="vp-bg" aria-hidden /> : null}
       <main className={`vp-card ${animationClass}`}>
         <div className="vp-head">
           {profile.showAvatar && profile.avatarUrl ? (
