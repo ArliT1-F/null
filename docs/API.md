@@ -63,8 +63,8 @@ Upload an image. **Authentication required.** `multipart/form-data`:
 }
 ```
 
-Errors: `401` unauthenticated, `400` invalid kind or undecodable file, `413` too
-large, `429` rate limited.
+Errors: `401` unauthenticated, `403` cross-origin request, `400` invalid kind or
+undecodable file, `413` too large, `429` rate limited (30/hour per user).
 
 ### `DELETE /api/media/:id`
 

@@ -38,9 +38,11 @@ build
 !.env.selfhosted.example
 !.env.cloud.example
 
-# Backups and uploaded media — must live outside the repo in production
-backups/
-media/
+# Backups and uploaded media — must live outside the repo in production.
+# These are anchored on purpose: an unanchored `media/` also matched
+# src/app/api/media/, so git silently dropped the media route handlers.
+/backups/
+/media/
 /srv/
 
 # Testing
